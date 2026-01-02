@@ -1,0 +1,13 @@
+name = "TTDynamics"
+uuid = "98f59f52-e016-4068-afe5-90126cbc5c1c"
+authors = ["htkhsh"]
+version = "1.0.0-DEV"
+
+[compat]
+julia = "1.6.7"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
