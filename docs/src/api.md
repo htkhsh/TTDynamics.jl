@@ -170,7 +170,7 @@ Build Σᵢ Oᵢ where each Oᵢ acts on site i.
 #### `build_sbham`
 ```julia
 build_sbham(sys::SBSystem; basis_sizes=nothing, threshold=0.999, 
-            nb_default=10, nb_max=30, unit_conv=1.0) → (TTMatrix, Vector{Int})
+            nb_min=10, nb_max=30, unit_conv=1.0) → (TTMatrix, Vector{Int})
 ```
 Build spin-boson Hamiltonian in TT format.
 
@@ -179,7 +179,7 @@ H = H_sys ⊗ I_bath + I_sys ⊗ Σᵢ ωᵢ nᵢ + Σⱼ Vⱼ ⊗ Σᵢ gᵢ x�
 - `sys`: SBSystem with hsys and benv
 - `basis_sizes`: Fock basis sizes (auto-estimated if nothing)
 - `threshold`: FC factor threshold for basis estimation
-- `nb_default`, `nb_max`: Basis size bounds
+- `nb_min`, `nb_max`: Basis size bounds
 - `unit_conv`: Unit conversion factor
 
 Returns `(H_tt, basis_sizes)`.
@@ -228,13 +228,13 @@ Returns n×m matrix where F[i,j] = ⟨i-1|j-1'⟩.
 
 #### `estimate_basis_size`
 ```julia
-estimate_basis_size(freq, coupling; threshold=0.999, nb_default=10, nb_max=30) → Int
+estimate_basis_size(freq, coupling; threshold=0.999, nb_min=10, nb_max=30) → Int
 ```
 Estimate optimal Fock basis size based on FC factors.
 
 #### `estimate_basis_sizes`
 ```julia
-estimate_basis_sizes(freqs, couplings; threshold=0.999, nb_default=10, nb_max=30) → Vector{Int}
+estimate_basis_sizes(freqs, couplings; threshold=0.999, nb_min=10, nb_max=30) → Vector{Int}
 ```
 Estimate basis sizes for multiple modes.
 

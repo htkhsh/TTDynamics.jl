@@ -25,6 +25,9 @@ Temp = 300.0     # Temperature [K]
 ε = 0.0          # Energy difference [cm⁻¹]
 Δ = 20.0         # Tunneling coupling [cm⁻¹]
 
+# HEOM system
+ndepth = 6
+
 # =============================================
 # QFiND: Discretize spectral density to get ω, g
 # =============================================
@@ -40,19 +43,28 @@ bcf_func = BosonicBCF(sdens, Temp; ub=1000.0)
 Ω_min = -250.0
 Ω_max = 300.0
 N_ω = 1000
-T_max = 150.0    # [fs] - time range for BCF fitting
-N_t = 100
+T_max = 500.0    # [fs] - time range for BCF fitting
+N_t = 200
 eps_id = 3e-2    # Discretization tolerance
 
 # ESPRIT fitting for BCF
 tmin = 0.0
-tmax_esprit = 150.0   # [fs]
-nsamples = 100
+tmax_esprit = 500.0   # [fs]
+nsamples = 200
 eps_esprit = 1e-3
 
 # Time evolution parameters
-t_end = 150.0    # [fs]
+t_end = 500.0    # [fs]
 dt_heom = 0.5    # [fs]
+
+# tAMEn parameters
+nb_min = 12      # Minimum boson truncation per mode
+nb_max = 50      # Maximum boson truncation
+nt = 3          
+tol = 7e-3
+Tfin_fs = t_end  # [fs] - same as HEOM
+dt_tamen = 2.0   # [fs]
+Nsteps = Int(Tfin_fs / dt_tamen)
 
 # Initialize data for ID method
 sbeta = BosonicQNSD(sdens, Temp)
@@ -96,11 +108,10 @@ println("  ESPRIT fitting error: $(round(fit_error_esprit, sigdigits=3))")
 
 # Build bath from ESPRIT results
 V = ComplexF64[1 0; 0 -1]  # σz coupling
-bath = BathExp(ef.expon, ef.coeff, V; add_conjugate=true)
+bath = BathExp(ef.expon, ef.coeff, V)
 noise = NoiseExp(bath)
 
-# HEOM system
-ndepth = 6
+
 system = HEOMSystem(H_heom, noise, ndepth; hierarchy=:depth)
 # Initial condition: localized on state |1⟩
 P0 = initial_ado(system, 1)
@@ -116,15 +127,6 @@ println("  Done!")
 println("\n" * "=" ^ 60)
 println("tAMEn: Running TT-based dynamics using TTDynamics...")
 println("=" ^ 60)
-
-# tAMEn parameters
-nb_default = 12  # Default boson truncation per mode
-nb_max = 50      # Maximum boson truncation
-nt = 3          
-tol = 7e-3
-Tfin_fs = t_end  # [fs] - same as HEOM
-dt_tamen = 2.0   # [fs]
-Nsteps = Int(Tfin_fs / dt_tamen)
 
 # Convert units: cm⁻¹ → fs⁻¹
 ω_fs = ω_bath .* icm2ifs  # Frequencies in fs⁻¹
@@ -146,7 +148,7 @@ benv = BosonicEnv(bath_tfd)
 # Create SBSystem
 sbsys = SBSystem(Hsys, benv)
 # Build Hamiltonian in TT format with automatic basis size estimation
-H_tt, basis_sizes = tt_sbham(sbsys; threshold=0.9999, nb_default=nb_default, nb_max=nb_max)
+H_tt, basis_sizes = tt_sbham(sbsys; threshold=0.9999, nb_min=nb_min, nb_max=nb_max)
 
 # Total Hilbert space dimension
 nb_total = prod(basis_sizes)
@@ -157,20 +159,44 @@ println("  Total Hilbert space: $(2 * nb_total)")
 spin = SpinSpace(0.5)
 boson_spaces = [BosonSpace(basis_sizes[i]) for i in 1:n_modes]
 spaces = vcat([spin], boson_spaces)
-dims = [dim(s) for s in spaces]  # Dimensions for tt_partial_trace
 
 opts = Dict(:verb => 0, :nswp => 2, :local_iters => 5, :time_scheme => "cn", :time_error_damp => 100.0, :kickrank => 4, :correct_2_norm => true,)
+
+function first_site_populations(psi::TTTensor)
+    @assert !isempty(psi.cores) "TT state must have at least one core"
+
+    env = ones(ComplexF64, 1, 1)
+    for site in length(psi.cores):-1:2
+        core = ComplexF64.(psi.cores[site])
+        r1, nsite, r2 = size(core)
+        env_next = zeros(ComplexF64, r1, r1)
+        for a in 1:r1, b in 1:r1, state in 1:nsite, c in 1:r2, d in 1:r2
+            env_next[a, b] += core[a, state, c] * conj(core[b, state, d]) * env[c, d]
+        end
+        env = env_next
+    end
+
+    first_core = ComplexF64.(psi.cores[1])
+    _, nsys, r2 = size(first_core)
+    pops = zeros(Float64, nsys)
+    for state in 1:nsys, c in 1:r2, d in 1:r2
+        pops[state] += real(first_core[1, state, c] * conj(first_core[1, state, d]) * env[c, d])
+    end
+    return pops
+end
 
 # Initial state: |↑, 0, 0, ...⟩
 x0 = initial_tt_state(spaces, state_index=1, site=1)
 # Time grid
 ts_tamen = collect(range(0.0, Tfin_fs; length=Nsteps + 1))
 # Storage for tAMEn results
-psi_tt = Vector{Vector{ComplexF64}}(undef, length(ts_tamen))
 norm_tt = zeros(Float64, length(ts_tamen))
+p_up_tt = zeros(Float64, length(ts_tamen))
+p_dn_tt = zeros(Float64, length(ts_tamen))
 
-psi_tt[1] = vec(tt_full(x0))
-norm_tt[1] = sum(abs2, psi_tt[1])
+norm_tt[1] = real(dot(x0, x0))
+pops_init = first_site_populations(x0)
+p_up_tt[1], p_dn_tt[1] = pops_init
 
 A = (-1im) * H_tt
 
@@ -180,8 +206,6 @@ println()
 println("  Step |   Time [fs]  |    P(↑)    |    P(↓)    |   Norm")
 println("  " * "-"^60)
 
-# Print initial state using system_populations
-pops_init = system_populations(psi_tt[1], 1, dims)
 println("  $(lpad(1, 4)) |  $(lpad(round(ts_tamen[1], digits=2), 9))  |  $(lpad(round(pops_init[1], digits=6), 8))  |  $(lpad(round(pops_init[2], digits=6), 8))  |  $(round(norm_tt[1], digits=6))")
 
 scheme = String(opts[:time_scheme])
@@ -192,20 +216,13 @@ let u = x0
         U, tgrid, _, _ = tamen(U, A_step, tol, opts)
         u = extract_snapshot(U, tgrid, 1.0, scheme)
         norm_tt[i] = real(dot(u, u))
-        psi_tt[i] = vec(tt_full(u))
-        
-        # Print populations using system_populations
-        pops = system_populations(psi_tt[i], 1, dims)
+        pops = first_site_populations(u)
+        p_up_tt[i], p_dn_tt[i] = pops
         println("  $(lpad(i, 4)) |  $(lpad(round(ts_tamen[i], digits=2), 9))  |  $(lpad(round(pops[1], digits=6), 8))  |  $(lpad(round(pops[2], digits=6), 8))  |  $(round(norm_tt[i], digits=6))")
     end
 end
 println("  " * "-"^60)
 println("  Done!")
-
-# Compute populations for tAMEn using system_populations
-pops_tt = system_populations(psi_tt, 1, dims)
-p_up_tt = pops_tt[1, :]
-p_dn_tt = pops_tt[2, :]
 
 println("\ntAMEn Results:")
 println("  Max norm deviation: $(maximum(abs.(norm_tt .- 1.0)))")
@@ -248,7 +265,7 @@ ax2 = Axis(fig2[1, 1],
 )
 
 # Plot BCF
-t_plot = collect(range(0.0, 150.0, length=150))
+t_plot = collect(range(0.0, t_end, length=N_t))
 bcf_exact = [bcf_func(t) for t in t_plot]
 bcf_qfind = [bcf_approx(t, ω_bath, g_bath) for t in t_plot]
 bcf_esprit = [ef(t) for t in t_plot]

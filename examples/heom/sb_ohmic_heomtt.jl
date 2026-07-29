@@ -31,12 +31,12 @@ println("=" ^ 60)
 # =============================================
 s = 1.0          # Ohmic (s=1)
 γc = 50.0        # Cutoff frequency [cm⁻¹]
-λ = 20.0         # Reorganization energy [cm⁻¹]
+λ = 5.0         # Reorganization energy [cm⁻¹]
 Temp = 300.0     # Temperature [K]
 
 # System Hamiltonian parameters
 ε = 0.0          # Energy difference [cm⁻¹]
-Δ = 100.0        # Tunneling coupling [cm⁻¹]
+Δ = 20.0        # Tunneling coupling [cm⁻¹]
 nsys = 2         # Number of system states
 
 # =============================================
@@ -52,12 +52,12 @@ bcf_func = BosonicBCF(sdens, Temp; ub=1000.0)
 
 # ESPRIT fitting parameters
 tmin = 0.0
-tmax_esprit = 200.0   # [fs]
+tmax_esprit = 500.0   # [fs]
 nsamples = 100
-eps_esprit = 5e-3   # Smaller eps → more exponential terms
+eps_esprit = 1e-2   # Smaller eps → more exponential terms
 
 # Time evolution parameters
-t_end = 200.0    # [fs]
+t_end = 500.0    # [fs]
 dt_heom = 0.5    # [fs]
 
 dt_sample = (tmax_esprit - tmin) / (nsamples - 1)
@@ -120,8 +120,8 @@ println("=" ^ 60)
 # HEOM-TT parameters  
 Nh = 10         # Maximum hierarchy depth per mode (match HEOM)
 nt = 3           # Number of time points for tAMEn
-tol = 1e-4       # TT tolerance
-dt_tt = 0.5     # Time step [fs]
+tol = 1e-3       # TT tolerance
+dt_tt = 1.0      # Time step [fs]
 Nsteps = Int(t_end / dt_tt)
 
 # Build HEOMTTSystem using NoiseExp (already constructed for KaisouEOM HEOM)

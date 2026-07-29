@@ -65,7 +65,7 @@ function SBSystem(hsys::AbstractMatrix, bfreqs::Vector{Vector}, bcoeffs::Vector{
 end
 
 """
-    build_sbham(sys; basis_sizes=nothing, unit_conv=1.0, threshold=0.999, nb_default=10, nb_max=30)
+    build_sbham(sys; basis_sizes=nothing, unit_conv=1.0, threshold=0.999, nb_min=10, nb_max=30)
 
 Build spin-boson Hamiltonian in TT format. Returns `(H_tt, basis_sizes)`.
 """

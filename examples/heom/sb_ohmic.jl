@@ -104,7 +104,7 @@ println("  ESPRIT fitting error: $(round(fit_error_esprit, sigdigits=3))")
 
 # Build bath from ESPRIT results
 V = ComplexF64[1 0; 0 -1]  # σz coupling
-bath = BathExp(ef.expon, ef.coeff, V; add_conjugate=true)
+bath = BathExp(ef.expon, ef.coeff, V)
 noise = NoiseExp(bath)
 
 # HEOM system
@@ -128,7 +128,7 @@ println("tAMEn: Running TT-based dynamics...")
 println("=" ^ 60)
 
 # tAMEn parameters
-nb_default = 12  # Default boson truncation per mode
+nb_min = 12      # Minimum boson truncation per mode
 nb_max = 50      # Maximum boson truncation
 nt = 3          
 tol = 7e-3
@@ -173,7 +173,7 @@ for i in 1:n_modes
     
     nb_i = estimate_basis_size(freq_i, coup_i; 
                                threshold=0.9999, 
-                               nb_default=nb_default, 
+                               nb_min=nb_min, 
                                nb_max=nb_max)
     push!(basis_sizes, nb_i)
     
