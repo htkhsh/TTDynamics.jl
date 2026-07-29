@@ -117,25 +117,27 @@ populations_ksl[:, 1] .= first_site_populations(u)
 rank_history[1] = collect(tt_ranks(u))
 
 A = 1im * H_tt
-for step_index in 2:length(times_ksl)
-    u = tt_ksl(
-        u,
-        A,
-        dt_ksl;
-        symmetric=true,
-        rmax=rmax,
-        tol=1e-12,
-    )
-    norms_ksl[step_index] = norm(u)
-    populations_ksl[:, step_index] .= first_site_populations(u)
-    rank_history[step_index] = collect(tt_ranks(u))
-    println(
-        step_index,
-        "  t=", times_ksl[step_index],
-        "  P=", populations_ksl[:, step_index],
-        "  norm=", norms_ksl[step_index],
-        "  rmax=", maximum(rank_history[step_index]),
-    )
+let u = u
+    for step_index in 2:length(times_ksl)
+        u = tt_ksl(
+            u,
+            A,
+            dt_ksl;
+            symmetric=true,
+            rmax=rmax,
+            tol=1e-12,
+        )
+        norms_ksl[step_index] = norm(u)
+        populations_ksl[:, step_index] .= first_site_populations(u)
+        rank_history[step_index] = collect(tt_ranks(u))
+        println(
+            step_index,
+            "  t=", times_ksl[step_index],
+            "  P=", populations_ksl[:, step_index],
+            "  norm=", norms_ksl[step_index],
+            "  rmax=", maximum(rank_history[step_index]),
+        )
+    end
 end
 
 open("ksl_populations.csv", "w") do io
