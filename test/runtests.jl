@@ -33,6 +33,32 @@ include("../examples/tfd/ksl/utils.jl")
     @test first_site_populations(spin_superposition) ≈ [0.5, 0.5]
 end
 
+@testset "KSL entangled first-site populations" begin
+    # This catches an implementation that drops complex off-diagonal bond
+    # environments while contracting the bath sites.
+    cores = [
+        reshape(ComplexF64[1 + 2im, 2 - im, -1im, 1 - 3im], 1, 2, 2),
+        reshape(
+            ComplexF64[
+                1, 1im, 2 - im, -1,
+                2im, 1 - im, -2, 1 + 2im,
+            ],
+            2,
+            2,
+            2,
+        ),
+        reshape(ComplexF64[1 - im, 2im, -1, 1 + im, 2 - 2im, -2im], 2, 3, 1),
+    ]
+    psi = TTTensor(cores)
+    dense_psi = tt_full(psi)
+    # tt_full returns kron-compatible axes, so the first TT core is the final
+    # dense axis.  This dense expansion is independent of the observable
+    # contraction below.
+    dense_populations = [sum(abs2, @view dense_psi[:, :, state]) for state in 1:2]
+
+    @test first_site_populations(psi) ≈ dense_populations
+end
+
 @testset "KSL padded-state evolution" begin
     sigma_x = ComplexF64[0 1; 1 0]
     number = ComplexF64[0 0; 0 1]

@@ -69,25 +69,30 @@ function first_site_populations(psi::TTTensor)
     T = promote_type(ComplexF64, map(core -> eltype(core), psi.cores)...)
     env = ones(T, 1, 1)
     for site in length(psi.cores):-1:2
-        core = T.(psi.cores[site])
+        core = psi.cores[site]
         r1, n, r2 = size(core)
         next_env = zeros(T, r1, r1)
-        for a in 1:r1, b in 1:r1, state in 1:n, c in 1:r2, d in 1:r2
-            next_env[a, b] +=
-                core[a, state, c] * conj(core[b, state, d]) * env[c, d]
+        workspace = zeros(T, r1, r2)
+        for state in 1:n
+            state_core = @view core[:, state, :]
+            mul!(workspace, state_core, env)
+            mul!(next_env, workspace, adjoint(state_core), one(T), one(T))
         end
         env = next_env
     end
 
-    first_core = T.(psi.cores[1])
+    first_core = psi.cores[1]
     _, nsys, r2 = size(first_core)
     populations = zeros(Float64, nsys)
-    for state in 1:nsys, c in 1:r2, d in 1:r2
-        populations[state] += real(
-            first_core[1, state, c] *
-            conj(first_core[1, state, d]) *
-            env[c, d],
-        )
+    workspace = zeros(T, 1, r2)
+    population = zeros(T, 1, 1)
+    conjugated = zeros(T, r2)
+    for state in 1:nsys
+        state_core = @view first_core[1, state, :]
+        mul!(workspace, transpose(state_core), env)
+        conjugated .= conj.(state_core)
+        mul!(population, workspace, reshape(conjugated, r2, 1))
+        populations[state] = real(population[1])
     end
     return populations
 end

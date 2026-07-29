@@ -105,14 +105,14 @@ u = pad_tt_ranks(localized, target_ranks)
 println("Bosonic basis sizes: ", basis_sizes)
 println("Initial TT ranks: ", target_ranks)
 println("Total Hilbert-space dimension: ", 2 * prod(basis_sizes))
-println("Initial state norm: ", real(dot(u, u)))
+println("Initial state norm: ", norm(u))
 
 times_ksl = collect(0.0:dt_ksl:t_end)
 norms_ksl = zeros(Float64, length(times_ksl))
 populations_ksl = zeros(Float64, 2, length(times_ksl))
 rank_history = Vector{Vector{Int}}(undef, length(times_ksl))
 
-norms_ksl[1] = real(dot(u, u))
+norms_ksl[1] = norm(u)
 populations_ksl[:, 1] .= first_site_populations(u)
 rank_history[1] = collect(tt_ranks(u))
 
@@ -126,7 +126,7 @@ for step_index in 2:length(times_ksl)
         rmax=rmax,
         tol=1e-12,
     )
-    norms_ksl[step_index] = real(dot(u, u))
+    norms_ksl[step_index] = norm(u)
     populations_ksl[:, step_index] .= first_site_populations(u)
     rank_history[step_index] = collect(tt_ranks(u))
     println(
