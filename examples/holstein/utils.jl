@@ -162,12 +162,13 @@ function validate_config(config::HolsteinConfig)
         throw(ArgumentError("bcf_sample_count must be at least two"))
     all(>(0), (
         config.hierarchy_local_size,
-        config.temporal_basis_size,
         config.sweep_count,
         config.local_iterations,
         config.kick_rank,
         config.progress_interval,
     )) || throw(ArgumentError("solver size and iteration controls must be positive"))
+    config.temporal_basis_size >= 3 && isodd(config.temporal_basis_size) ||
+        throw(ArgumentError("temporal_basis_size must be odd and at least three for CN"))
 
     step_count = config.final_time_fs / config.time_step_fs
     isapprox(step_count, round(step_count); atol=1e-12, rtol=1e-12) ||

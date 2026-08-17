@@ -14,6 +14,10 @@ implementation and TTSolver's tAMEn integrator.
   validation helpers.
 - `examples/holstein/holstein_brownian_heomtt.jl` contains the executable
   simulation, diagnostics, CSV output, and plots.
+- `examples/holstein/Project.toml` declares the executable's direct dependencies
+  without adding example-only packages to the library environment.
+- `examples/holstein/README.md` documents reproducible setup and execution,
+  including local development paths for the unregistered packages.
 - `test/runtests.jl` includes lightweight tests for the model helpers and a
   small HEOM-TT initial-state check.
 
@@ -115,7 +119,16 @@ tAMEn tolerance, sweep count, local iterations, kick rank, and internal time
 grid size remain easy to change in the configuration block. Defaults favor a
 useful first run rather than a convergence claim; the comments explicitly tell
 users to converge hierarchy size, fit tolerance, time step, and TT tolerance
-for production results.
+for production results. The fixed Crank-Nicolson scheme requires the internal
+time grid size to be odd and at least three; its default remains three.
+
+## Example Environment
+
+The executable uses its own Julia project, which directly declares TTDynamics,
+TTSolver, KaisouEOM, QFiND, ExpFit, CairoMakie, and the imported standard
+libraries. The README supplies exact URL/revision setup and sibling-checkout
+development commands for the unregistered dependencies. The generated example
+Manifest records those sources locally and remains uncommitted.
 
 ## Observables and Outputs
 
@@ -145,6 +158,8 @@ Validation rejects:
 - an initial site outside `1:N`;
 - nonpositive temperature, Brownian parameters, hierarchy local size, time
   step, final time, sample count, or solver tolerances;
+- a `temporal_basis_size` that is less than three or even, because the fixed
+  Crank-Nicolson scheme requires an odd grid with at least three points;
 - a final time that is not an integer multiple of the time step.
 
 The Hamiltonian helper handles `N = 2` without adding the same periodic bond
@@ -160,7 +175,8 @@ Lightweight tests verify:
    `-J` and all non-neighbor off-diagonal elements vanish;
 3. the two-site Hamiltonian does not double its single bond;
 4. site projectors are Hermitian, mutually orthogonal, and sum to identity;
-5. invalid configurations fail early with `ArgumentError`;
+5. invalid configurations, including CN time grids of size 1, 2, or 4, fail
+   early with `ArgumentError`;
 6. a small synthetic multi-bath `HEOMTTSystem` produces an initial state with
    unit trace and the expected localized population.
 

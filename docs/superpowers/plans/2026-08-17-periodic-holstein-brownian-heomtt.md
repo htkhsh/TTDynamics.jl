@@ -27,6 +27,7 @@
 
 - Create `examples/holstein/utils.jl`: configuration type, validation, periodic Hamiltonian, and site projectors.
 - Create `examples/holstein/holstein_brownian_heomtt.jl`: Brownian fit, HEOM-TT assembly, evolution, CSV writing, plotting, and `main()`.
+- Create `examples/holstein/Project.toml` and `README.md`: direct dependency declarations plus reproducible instantiate/develop/run commands.
 - Modify `test/runtests.jl`: unit tests for utilities and a small synthetic multi-bath HEOM-TT state.
 
 ### Task 1: Model Configuration and Periodic Hamiltonian
@@ -125,10 +126,14 @@ Extend the same test set:
     @test config.reorganization_energy_cm == 600.0
     @test config.brownian_damping_cm == 200.0
     @test config.temperature_K == 300.0
+    @test config.temporal_basis_size == 3
     @test_throws ArgumentError HolsteinConfig(site_count=1)
     @test_throws ArgumentError HolsteinConfig(initial_site=6)
     @test_throws ArgumentError HolsteinConfig(time_step_fs=3.0, final_time_fs=100.0)
     @test_throws ArgumentError HolsteinConfig(hierarchy_local_size=0)
+    @test_throws ArgumentError HolsteinConfig(temporal_basis_size=1)
+    @test_throws ArgumentError HolsteinConfig(temporal_basis_size=2)
+    @test_throws ArgumentError HolsteinConfig(temporal_basis_size=4)
 ```
 
 - [ ] **Step 6: Run the tests and verify the missing-type failure**
@@ -213,7 +218,8 @@ end
 
 In `validate_config`, validate length equality, index bounds, finite values,
 nonnegative hopping, positivity for the remaining physical/numerical scales,
-sample count >= 2, and
+sample count >= 2, `temporal_basis_size >= 3 && isodd(temporal_basis_size)` for
+the fixed Crank-Nicolson scheme, and
 `isapprox(final_time_fs / time_step_fs, round(...); atol=1e-12, rtol=1e-12)`.
 Return the same config after validation.
 
@@ -247,7 +253,7 @@ using KaisouEOM
 
 @testset "Holstein multi-bath HEOM-TT initial state" begin
     projectors = site_projectors(2)
-    baths = [BathExp(ComplexF64[-0.1], ComplexF64[0.02], V) for V in projectors]
+    baths = [BathExp(ComplexF64[0.1], ComplexF64[0.02], V) for V in projectors]
     noise = NoiseExp(baths)
     system = HEOMTTSystem(ComplexF64[0 -1; -1 0], noise, 2)
     _, trace_observable, populations = build_heom_liouvillian(system; tol=1e-12)
@@ -278,6 +284,8 @@ git commit -m "test: cover multi-bath HEOM-TT initial state"
 
 **Files:**
 - Create: `examples/holstein/holstein_brownian_heomtt.jl`
+- Create: `examples/holstein/Project.toml`
+- Create: `examples/holstein/README.md`
 
 **Interfaces:**
 - Consumes: all Task 1 helpers and `HolsteinConfig`.
@@ -402,16 +410,14 @@ production calculations.
 
 - [ ] **Step 7: Verify loading does not launch the simulation**
 
-Run:
+Instantiate the example-specific environment as documented in its README, then
+run:
 
 ```bash
-julia --project=. -e 'include("examples/holstein/holstein_brownian_heomtt.jl"); @assert DEFAULT_CONFIG.site_count == 5'
+julia --project=examples/holstein -e 'include("examples/holstein/holstein_brownian_heomtt.jl"); @assert DEFAULT_CONFIG.site_count == 5'
 ```
 
 Expected: exit code 0, with no propagation progress and no generated output.
-If example-only packages are absent from the package environment, run with the
-same Julia environment used by the existing `examples/heom/sb_ohmic_heomtt.jl`
-and document that command in the final handoff.
 
 - [ ] **Step 8: Run formatting/static checks and the test suite**
 

@@ -33,10 +33,14 @@ include("../examples/holstein/utils.jl")
     @test config.reorganization_energy_cm == 600.0
     @test config.brownian_damping_cm == 200.0
     @test config.temperature_K == 300.0
+    @test config.temporal_basis_size == 3
     @test_throws ArgumentError HolsteinConfig(site_count=1)
     @test_throws ArgumentError HolsteinConfig(initial_site=6)
     @test_throws ArgumentError HolsteinConfig(time_step_fs=3.0, final_time_fs=100.0)
     @test_throws ArgumentError HolsteinConfig(hierarchy_local_size=0)
+    @test_throws ArgumentError HolsteinConfig(temporal_basis_size=1)
+    @test_throws ArgumentError HolsteinConfig(temporal_basis_size=2)
+    @test_throws ArgumentError HolsteinConfig(temporal_basis_size=4)
 end
 
 @testset "KSL example utilities" begin
@@ -108,7 +112,7 @@ end
 
 @testset "Holstein multi-bath HEOM-TT initial state" begin
     projectors = site_projectors(2)
-    baths = [BathExp(ComplexF64[-0.1], ComplexF64[0.02], V) for V in projectors]
+    baths = [BathExp(ComplexF64[0.1], ComplexF64[0.02], V) for V in projectors]
     noise = NoiseExp(baths)
     system = HEOMTTSystem(ComplexF64[0 -1; -1 0], noise, 2)
     _, trace_observable, populations = build_heom_liouvillian(system; tol=1e-12)
