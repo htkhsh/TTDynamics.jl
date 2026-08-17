@@ -1,6 +1,7 @@
 using TTDynamics
 using TTSolver
 using Test
+using KaisouEOM
 
 @testset "TTDynamics.jl" begin
     # Write your tests here.
@@ -103,4 +104,17 @@ end
     x1 = tt_ksl(x0, 1im * H, 0.1; symmetric=true, rmax=30)
 
     @test norm(x1) ≈ norm(x0) rtol=1e-11
+end
+
+@testset "Holstein multi-bath HEOM-TT initial state" begin
+    projectors = site_projectors(2)
+    baths = [BathExp(ComplexF64[-0.1], ComplexF64[0.02], V) for V in projectors]
+    noise = NoiseExp(baths)
+    system = HEOMTTSystem(ComplexF64[0 -1; -1 0], noise, 2)
+    _, trace_observable, populations = build_heom_liouvillian(system; tol=1e-12)
+    rho0 = build_initial_state(system, 1; tol=1e-12)
+
+    @test real(tt_dot(trace_observable, rho0)) ≈ 1.0
+    @test real(tt_dot(populations[1], rho0)) ≈ 1.0
+    @test real(tt_dot(populations[2], rho0)) ≈ 0.0 atol=1e-14
 end
