@@ -7,6 +7,36 @@ using Test
 end
 
 include("../examples/tfd/ksl/utils.jl")
+include("../examples/holstein/utils.jl")
+
+@testset "Periodic Holstein model utilities" begin
+    H = periodic_holstein_hamiltonian(zeros(5), 400.0)
+    @test ishermitian(H)
+    @test diag(H) == zeros(5)
+    @test H[1, 2] == H[2, 3] == H[3, 4] == H[4, 5] == H[5, 1] == -400.0
+    @test H[1, 3] == H[2, 4] == H[3, 5] == 0.0
+
+    H2 = periodic_holstein_hamiltonian([10.0, 20.0], 3.0)
+    @test H2 == ComplexF64[10 -3; -3 20]
+
+    projectors = site_projectors(5)
+    @test all(ishermitian, projectors)
+    @test sum(projectors) == Matrix{ComplexF64}(I, 5, 5)
+    @test all(iszero(projectors[i] * projectors[j]) for i in 1:5 for j in 1:5 if i != j)
+
+    config = HolsteinConfig()
+    @test validate_config(config) === config
+    @test config.site_count == 5
+    @test config.hopping_cm == 400.0
+    @test config.brownian_frequency_cm == 1400.0
+    @test config.reorganization_energy_cm == 600.0
+    @test config.brownian_damping_cm == 200.0
+    @test config.temperature_K == 300.0
+    @test_throws ArgumentError HolsteinConfig(site_count=1)
+    @test_throws ArgumentError HolsteinConfig(initial_site=6)
+    @test_throws ArgumentError HolsteinConfig(time_step_fs=3.0, final_time_fs=100.0)
+    @test_throws ArgumentError HolsteinConfig(hierarchy_local_size=0)
+end
 
 @testset "KSL example utilities" begin
     @test admissible_tt_ranks([2, 3, 4]) == [1, 2, 4, 1]
