@@ -12,7 +12,9 @@
 
 - Use the one-exciton site basis with `N = 5` and periodic boundary conditions.
 - Use the hopping term `-J`, with `J = 400 cm^-1`.
-- Use independent identical Brownian baths with `Omega = 1400 cm^-1`, `Gamma = 200 cm^-1`, `lambda = 600 cm^-1`, and `T = 300 K`.
+- Use independent identical Brownian baths with `Omega = 1400 cm^-1`, QFiND
+  damping parameter `Gamma_Q = 200 cm^-1` (pole decay `Gamma_Q / 2 = 100
+  cm^-1`), `lambda = 600 cm^-1`, and `T = 300 K`.
 - Start from an excitation localized at site 1 and evolve for 100 fs by default.
 - Resolve generated output paths relative to `examples/holstein/`.
 - Keep the full BCF fit and propagation out of CI.
@@ -146,6 +148,7 @@ struct HolsteinConfig
     site_energies_cm::Vector{Float64}
     hopping_cm::Float64
     brownian_frequency_cm::Float64
+    # QFiND damping parameter Gamma_Q; Brownian pole decay is Gamma_Q / 2.
     brownian_damping_cm::Float64
     reorganization_energy_cm::Float64
     temperature_K::Float64
@@ -172,7 +175,7 @@ function HolsteinConfig(;
     site_energies_cm=zeros(site_count),
     hopping_cm=400.0,
     brownian_frequency_cm=1400.0,
-    brownian_damping_cm=200.0,
+    brownian_damping_cm=200.0, # QFiND Gamma_Q; default pole decay is 100 cm^-1
     reorganization_energy_cm=600.0,
     temperature_K=300.0,
     initial_site=1,
@@ -312,7 +315,7 @@ ub=config.bcf_upper_bound_cm)`. Sample the inclusive range from 0 to
 `bcf_final_time_fs`, call `ExpFit.esprit(samples, sample_step,
 bcf_fit_tolerance)`, and calculate `norm(fitted_samples - samples) /
 norm(samples)`. Reject an empty fit, nonfinite error, nonfinite coefficients,
-or any exponent with nonnegative real part.
+or any exponent with nonpositive real part.
 
 - [ ] **Step 2: Add HEOM-TT problem construction**
 

@@ -42,14 +42,15 @@ Each site has an independent bath coupled through the projector
 density
 
 ```text
-J(omega) = 4 lambda Gamma Omega^2 omega
-           / ((omega^2 - Omega^2)^2 + 4 Gamma^2 omega^2),
+J(omega) = 2 lambda Gamma_Q Omega^2 omega
+           / ((omega^2 - Omega^2)^2 + Gamma_Q^2 omega^2),
 ```
 
 with:
 
 - characteristic frequency `Omega = 1400 cm^-1`;
-- damping factor `Gamma = 200 cm^-1`;
+- QFiND Brownian damping parameter `Gamma_Q = 200 cm^-1`, corresponding to
+  pole decay `Gamma_Q / 2 = 100 cm^-1`;
 - reorganization energy `lambda = 600 cm^-1`;
 - temperature `T = 300 K`.
 
@@ -58,9 +59,11 @@ femtoseconds before propagation.
 
 ## Bath-Correlation Expansion
 
-The example constructs `QFiND.BrownianSD(Omega, Gamma, lambda)` and its finite
-temperature `BosonicBCF`. The correlation function is sampled on a documented
-time grid and fitted to an exponential sum with `ExpFit.esprit`.
+The example constructs `QFiND.BrownianSD(Omega, Gamma_Q, lambda)` and its finite
+temperature `BosonicBCF`. Here `Gamma_Q` is QFiND's full Brownian damping
+parameter, so the Brownian poles decay at `Gamma_Q / 2`. The correlation
+function is sampled on a documented time grid and fitted to an exponential sum
+with `ExpFit.esprit`.
 
 The fit quality is reported as a relative 2-norm error. The fitted exponential
 parameters are reused for every site, while each `BathExp` receives its own

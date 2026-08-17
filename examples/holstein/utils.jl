@@ -41,12 +41,15 @@ end
     HolsteinConfig(; kwargs...)
 
 Store the physical and numerical settings for a periodic Holstein HEOM-TT run.
+`brownian_damping_cm` is QFiND's Brownian damping parameter `Γ_Q`; its poles
+decay at `Γ_Q / 2` (100 cm⁻¹ for the default `Γ_Q = 200 cm⁻¹`).
 """
 struct HolsteinConfig
     site_count::Int
     site_energies_cm::Vector{Float64}
     hopping_cm::Float64
     brownian_frequency_cm::Float64
+    # QFiND Brownian damping parameter Γ_Q; pole decay is Γ_Q / 2.
     brownian_damping_cm::Float64
     reorganization_energy_cm::Float64
     temperature_K::Float64
@@ -73,7 +76,7 @@ function HolsteinConfig(;
     site_energies_cm=zeros(site_count),
     hopping_cm=400.0,
     brownian_frequency_cm=1400.0,
-    brownian_damping_cm=200.0,
+    brownian_damping_cm=200.0, # QFiND Γ_Q; default pole decay is 100 cm⁻¹
     reorganization_energy_cm=600.0,
     temperature_K=300.0,
     initial_site=1,

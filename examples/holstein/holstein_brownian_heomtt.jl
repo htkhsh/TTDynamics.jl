@@ -18,7 +18,8 @@ const DEFAULT_CONFIG = HolsteinConfig()
     fit_brownian_bcf(config)
 
 Sample and exponentially fit the finite-temperature Brownian bath correlation
-function described by `config`.
+function described by `config`. Its damping field is passed directly as
+QFiND's `Γ_Q`, whose corresponding pole decay is `Γ_Q / 2`.
 """
 function fit_brownian_bcf(config::HolsteinConfig)
     spectral_density = BrownianSD(
@@ -252,6 +253,7 @@ Save population, trace-conservation, and TT-rank plots in `output_directory`.
 """
 function save_diagnostic_plots(output_directory, config::HolsteinConfig, result)
     mkpath(output_directory)
+    pole_decay_cm = config.brownian_damping_cm / 2
 
     population_path = joinpath(output_directory, "holstein_brownian_populations.png")
     population_figure = Figure(size=(900, 600))
@@ -260,9 +262,10 @@ function save_diagnostic_plots(output_directory, config::HolsteinConfig, result)
         xlabel="Time [fs]",
         ylabel="Population",
         title="Periodic Holstein HEOM-TT populations\n" *
-              "N=$(config.site_count), J=$(config.hopping_cm) cm⁻¹, " *
+              "N=$(config.site_count), J=$(config.hopping_cm) cm⁻¹\n" *
               "Ω=$(config.brownian_frequency_cm) cm⁻¹, " *
-              "Γ=$(config.brownian_damping_cm) cm⁻¹, " *
+              "QFiND Γ_Q=$(config.brownian_damping_cm) cm⁻¹ " *
+              "(pole decay Γ_Q/2=$pole_decay_cm cm⁻¹), " *
               "λ=$(config.reorganization_energy_cm) cm⁻¹, T=$(config.temperature_K) K",
     )
     for site in 1:config.site_count
@@ -326,10 +329,13 @@ write its CSV and plot diagnostics beside this script.
 """
 function main(config=DEFAULT_CONFIG)
     validate_config(config)
+    pole_decay_cm = config.brownian_damping_cm / 2
     println("Periodic Holstein model with independent Brownian baths")
     println(
         "  Sites=$(config.site_count), J=$(config.hopping_cm) cm⁻¹, " *
-        "Ω=$(config.brownian_frequency_cm) cm⁻¹, Γ=$(config.brownian_damping_cm) cm⁻¹, " *
+        "Ω=$(config.brownian_frequency_cm) cm⁻¹, " *
+        "QFiND Γ_Q=$(config.brownian_damping_cm) cm⁻¹ " *
+        "(pole decay Γ_Q/2=$pole_decay_cm cm⁻¹), " *
         "λ=$(config.reorganization_energy_cm) cm⁻¹, T=$(config.temperature_K) K",
     )
     println(
