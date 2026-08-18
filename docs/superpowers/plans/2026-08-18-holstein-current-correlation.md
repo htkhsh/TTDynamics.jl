@@ -1,5 +1,9 @@
 # Holstein Current Correlation Implementation Plan
 
+> **Superseded — do not execute:** The user selected a repository-wide HEOM-TT
+> twin-space migration after this plan was written. A replacement current-
+> correlation plan will be written after the twin-space migration is complete.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add separate executables that save a fixed-1000-fs equilibrated periodic Holstein HEOM-TT state and reload it to calculate the unsymmetrized current correlation for 0:1:200 fs.

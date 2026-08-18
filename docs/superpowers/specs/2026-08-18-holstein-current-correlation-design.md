@@ -1,5 +1,10 @@
 # Holstein Equilibration and Current Correlation Design
 
+> **Superseded for implementation:** The standard HEOM-TT representation is
+> being migrated to explicit ket/bra twin space first. This workflow will be
+> redesigned after `2026-08-18-heom-twin-space-design.md` is implemented; do
+> not implement the vectorized-system-core details below.
+
 ## Goal
 
 Add a separate, readable HEOM-TT example that:
