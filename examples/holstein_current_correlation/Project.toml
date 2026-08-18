@@ -1,0 +1,20 @@
+[deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+KaisouEOM = "e865c079-6a0d-426d-afc2-450809b0c699"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+QFiND = "af16a7c1-792b-4481-9b88-c9c438329a9c"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+TTDynamics = "98f59f52-e016-4068-afe5-90126cbc5c1c"
+TTSolver = "6fd66e5e-56e0-488c-9f68-e25b72b7e6b0"
+
+[compat]
+CairoMakie = "0.12 - 0.15"
+KaisouEOM = "1"
+LinearAlgebra = "1.11"
+QFiND = "1"
+Statistics = "1.11"
+TOML = "1"
+TTDynamics = "1"
+TTSolver = "1"
+julia = "1.11"

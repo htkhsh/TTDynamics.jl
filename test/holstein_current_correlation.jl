@@ -446,3 +446,44 @@ end
         @test isfile(main_result.csv_path)
     end
 end
+
+@testset "Holstein reloaded current correlation" begin
+    fixture = equilibration_fixture()
+    (; config, problem, state) = fixture
+    operators = build_current_heom_operators(config, problem)
+
+    result = run_current_correlation(
+        state,
+        config,
+        problem;
+        correlation_time_fs=0.0,
+    )
+    source = operators.left_action * state
+    expected = tt_dot(operators.observable, source)
+    @test result.times == [0.0]
+    @test result.correlation == ComplexF64[expected]
+    @test result.maximum_rank == [maximum(tt_ranks(result.state))]
+    @test result.mean_rank == [mean(tt_ranks(result.state))]
+    @test_throws ArgumentError run_current_correlation(
+        state,
+        config,
+        problem;
+        correlation_time_fs=0.5,
+    )
+
+    synthetic_result = (
+        times=[0.0, 1.0],
+        correlation=ComplexF64[1.5 - 2.0im, -3.0 + 4.25im],
+        maximum_rank=[2, 3],
+        mean_rank=[1.5, 2.0],
+    )
+    mktempdir() do directory
+        path = joinpath(directory, "current_correlation.csv")
+        @test write_current_correlation_csv(path, synthetic_result) == path
+        rows = readlines(path)
+        @test rows[1] == "time_fs,correlation_real_fs^-2,correlation_imag_fs^-2,max_rank,mean_rank"
+        @test rows[2] == "0.0,1.5,-2.0,2,1.5"
+        @test rows[3] == "1.0,-3.0,4.25,3,2.0"
+        @test_throws ArgumentError write_current_correlation_csv(path, synthetic_result)
+    end
+end

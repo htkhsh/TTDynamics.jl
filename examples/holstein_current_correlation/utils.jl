@@ -613,3 +613,106 @@ function write_equilibration_csv(path::AbstractString, result;
         temporary_path === nothing || rm(temporary_path; force=true)
     end
 end
+
+function _correlation_step_count(config::HolsteinConfig,
+                                 correlation_time_fs::Real)::Int
+    isfinite(correlation_time_fs) && correlation_time_fs >= 0 ||
+        throw(ArgumentError("correlation_time_fs must be finite and nonnegative"))
+    ratio = correlation_time_fs / config.time_step_fs
+    step_count = round(Int, ratio)
+    isapprox(ratio, step_count; rtol=0, atol=eps(Float64) * max(1, abs(ratio))) ||
+        throw(ArgumentError("correlation_time_fs must be an integral multiple of time_step_fs"))
+    return step_count
+end
+
+"""
+    run_current_correlation(equilibrium_state, config, problem;
+                            correlation_time_fs=200.0) -> NamedTuple
+
+Propagate the unnormalized current source `J * rho_eq` and record the
+unsymmetrized correlation `Tr[J exp(Lt)(J rho_eq)]` at every fixed time step.
+"""
+function run_current_correlation(equilibrium_state::TTTensor,
+                                 config::HolsteinConfig, problem;
+                                 correlation_time_fs::Real=200.0)::NamedTuple
+    validate_config(config)
+    step_count = _correlation_step_count(config, correlation_time_fs)
+    operators = build_current_heom_operators(config, problem)
+    exact_source = operators.left_action * equilibrium_state
+    source = tt_round(
+        exact_source,
+        config.state_rounding_tolerance,
+    )
+    propagated = propagate_fixed_steps(
+        source,
+        problem,
+        config,
+        step_count;
+        observe=(step, time, state) -> (
+            correlation=ComplexF64(tt_dot(operators.observable, state)),
+            maximum_rank=maximum(tt_ranks(state)),
+            mean_rank=mean(tt_ranks(state)),
+        ),
+    )
+    observations = propagated.observations
+    times = collect(0:step_count) .* config.time_step_fs
+    length(times) == length(observations) || error("correlation observation count is inconsistent")
+    correlation = ComplexF64[observation.correlation for observation in observations]
+    correlation[1] = tt_dot(operators.observable, exact_source)
+    return (;
+        times,
+        correlation,
+        maximum_rank=[observation.maximum_rank for observation in observations],
+        mean_rank=[observation.mean_rank for observation in observations],
+        state=propagated.state,
+    )
+end
+
+"""
+    write_current_correlation_csv(path, result; overwrite=false) -> String
+
+Write complex current-correlation values as separate real and imaginary
+components in inverse-femtosecond-squared units.
+"""
+function write_current_correlation_csv(path::AbstractString, result;
+                                       overwrite::Bool=false)::String
+    target = String(path)
+    !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
+    row_count = length(result.times)
+    length(result.correlation) == row_count ||
+        throw(ArgumentError("correlation length must equal times length"))
+    length(result.maximum_rank) == row_count ||
+        throw(ArgumentError("maximum_rank length must equal times length"))
+    length(result.mean_rank) == row_count ||
+        throw(ArgumentError("mean_rank length must equal times length"))
+
+    temporary_path = nothing
+    try
+        temporary_path, io = mktemp(dirname(abspath(target)))
+        try
+            println(io, "time_fs,correlation_real_fs^-2,correlation_imag_fs^-2,max_rank,mean_rank")
+            for index in eachindex(result.times)
+                correlation = result.correlation[index]
+                println(io, join(Any[
+                    result.times[index],
+                    real(correlation),
+                    imag(correlation),
+                    result.maximum_rank[index],
+                    result.mean_rank[index],
+                ], ","))
+            end
+        finally
+            close(io)
+        end
+        !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
+        if overwrite
+            _equilibrium_atomic_rename(temporary_path, target)
+            temporary_path = nothing
+        else
+            Base.Filesystem.hardlink(temporary_path, target)
+        end
+        return target
+    finally
+        temporary_path === nothing || rm(temporary_path; force=true)
+    end
+end
