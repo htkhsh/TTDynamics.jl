@@ -13,6 +13,13 @@ function twin_test_system(; nb=2)
     HEOMTTSystem(H, NoiseExp([bath]), nb)
 end
 
+function algebraic_twin_test_system(; nb=2)
+    H = ComplexF64[0.3 + 0.1im 0.7 + 0.2im; -0.4 + 0.5im -0.2im]
+    V = ComplexF64[0.6 + 0.2im 0.1 + 0.3im; -0.5 + 0.4im -0.2 + 0.1im]
+    bath = BathExp(ComplexF64[0.4], ComplexF64[0.03 - 0.02im], V)
+    HEOMTTSystem(H, NoiseExp([bath]), nb)
+end
+
 function twin_coefficient_matrix(state::TTTensor)
     @assert length(state.cores) == 2
     ket_core, bra_core = state.cores
@@ -225,4 +232,9 @@ end
     propagated = tt_ksl(rho0, (-1) * liouvillian, 1e-3;
                         symmetric=true, expmethod=:taylor, tol=1e-12, rmax=4)
     @test tt_dot(trace_observable, propagated) ≈ 1.0 atol=1e-9
+
+    algebraic_system = algebraic_twin_test_system()
+    algebraic_liouvillian, _, _ = build_heom_liouvillian(algebraic_system; tol=1e-14)
+    @test tt_full(algebraic_liouvillian) ≈
+          dense_twin_liouvillian(algebraic_system) rtol=1e-12 atol=1e-12
 end
