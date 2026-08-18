@@ -458,6 +458,22 @@ end
           dense_twin_liouvillian(algebraic_system) rtol=1e-12 atol=1e-12
 end
 
+@testset "HEOM twin-space Liouvillian without bath terms" begin
+    H = ComplexF64[0.3 0.7 + 0.2im; 0.7 - 0.2im -0.4]
+    system = HEOMTTSystem(H, NoiseExp(BathExp[]), Int[])
+
+    liouvillian, trace_observable, populations =
+        build_heom_liouvillian(system; tol=1e-14)
+
+    identity_system = Matrix{ComplexF64}(I, 2, 2)
+    expected = -1im * (kron(H, identity_system) -
+                       kron(identity_system, transpose(H)))
+    @test tt_dims(liouvillian) == ([2, 2], [2, 2])
+    @test tt_full(liouvillian) ≈ expected rtol=1e-12 atol=1e-12
+    @test tt_dims(trace_observable) == [2, 2]
+    @test all(population -> tt_dims(population) == [2, 2], populations)
+end
+
 @testset "HEOM twin-space component rounding schedule" begin
     system = rounding_test_system()
     tolerance = 5e-3

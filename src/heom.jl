@@ -274,11 +274,16 @@ function build_heom_liouvillian(sys::HEOMTTSystem; tol::Float64=1e-12)
         end
     end
 
-    upward_accumulator = tt_round(upward_accumulator, tol)
+    !isnothing(upward_accumulator) &&
+        (upward_accumulator = tt_round(upward_accumulator, tol))
     !isnothing(downward_accumulator) &&
         (downward_accumulator = tt_round(downward_accumulator, tol))
 
-    liouvillian = (-1im) * hamiltonian - decay_accumulator - 1im * upward_accumulator
+    liouvillian = (-1im) * hamiltonian
+    !isnothing(decay_accumulator) &&
+        (liouvillian = liouvillian - decay_accumulator)
+    !isnothing(upward_accumulator) &&
+        (liouvillian = liouvillian - 1im * upward_accumulator)
     !isnothing(downward_accumulator) &&
         (liouvillian = liouvillian - 1im * downward_accumulator)
     liouvillian = tt_round(liouvillian, tol)
