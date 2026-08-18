@@ -92,7 +92,7 @@ function HolsteinConfig(;
     bcf_upper_bound_cm=10_000.0,
     hierarchy_local_size=4,
     temporal_basis_size=3,
-    tamen_tolerance=1e-4,
+    tamen_tolerance=1e-2,
     operator_tolerance=1e-10,
     state_rounding_tolerance=1e-10,
     sweep_count=5,
