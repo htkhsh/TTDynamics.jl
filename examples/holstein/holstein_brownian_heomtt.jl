@@ -96,8 +96,10 @@ function build_holstein_heomtt(config::HolsteinConfig, decomposition)
         config.initial_site;
         tol=config.operator_tolerance,
     )
+    tt_dimensions = heom_tt_dimensions(system)
     println("  TPSD terms per site: $(length(decomposition.exponents))")
-    println("  Total hierarchy cores: $(length(system.nb))")
+    println("  TT mode dimensions [ket, bra, hierarchy...]: $tt_dimensions")
+    println("  Total TT cores: $(length(tt_dimensions)) (2 system cores + $(length(system.nb)) hierarchy cores)")
     println("  Hierarchy local sizes: $(system.nb)")
     println("  Initial TT ranks: $(tt_ranks(initial_state))")
 

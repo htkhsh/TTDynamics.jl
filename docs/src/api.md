@@ -85,19 +85,17 @@ Spin-boson system.
 
 ### heom.jl
 
-#### `HEOMParams`
-Parameters for HEOM-TT calculation.
+#### `HEOMTTSystem`
+Parameters for a HEOM-TT calculation.
 
 **Fields:**
-- `nsys::Int`: Number of system states
-- `Nh::Int`: Maximum hierarchy depth per bath mode
-- `γ::Vector{ComplexF64}`: Exponential decay rates
-- `c1::Vector{ComplexF64}`: BCF coefficients √cₖ
-- `c2::Vector{ComplexF64}`: BCF coefficients √cₖ*
-- `D::Vector{Matrix{ComplexF64}}`: Coupling operators
 - `H_sys::Matrix{ComplexF64}`: System Hamiltonian
+- `noise::NoiseExp`: Exponential bath-correlation expansion and coupling operators
+- `nb::Vector{Int}`: Local hierarchy dimensions
 
-**Constructor:** `HEOMParams(nsys, Nh, γ, c, D, H_sys)`
+**Constructors:**
+- `HEOMTTSystem(H_sys, noise, nb::Vector{Int})`
+- `HEOMTTSystem(H_sys, noise, nb::Int)`
 
 ---
 
@@ -186,9 +184,38 @@ Returns `(H_tt, basis_sizes)`.
 
 ### HEOM (heom.jl)
 
+HEOM-TT states use the twin-space mode order
+`[ket(N), bra(N), hierarchy...]`, rather than one vectorized `N^2` system
+mode. A system left action `A ρ` acts on the ket mode, while a right action
+`ρ B` acts on the bra mode through `transpose(B)`. The trace observable has
+the same mode order and an internal ket-bra rank `N` that contracts matching
+ket and bra indices.
+
+The builder signatures are unchanged, but every HEOM state, observable, and
+operator now has two system dimensions: `heom_tt_dimensions(system)` returns
+`[N, N, nb...]`. Consequently, HEOM-TT checkpoints saved with the old
+`[N^2, nb...]` layout are incompatible and must be regenerated. This semantic
+restriction applies only to HEOM states; generic non-HEOM TT binary files are
+unaffected.
+
+#### `heom_tt_dimensions`
+```julia
+heom_tt_dimensions(system::HEOMTTSystem) -> Vector{Int}
+```
+Return the canonical HEOM-TT dimensions `[N, N, hierarchy...]`.
+
+#### `root_density_matrix`
+```julia
+root_density_matrix(state::TTTensor, system::HEOMTTSystem) -> Matrix{ComplexF64}
+```
+Extract the root auxiliary density matrix by fixing all hierarchy modes to
+their vacuum index. The state must have the twin-space dimensions returned by
+`heom_tt_dimensions`; old vectorized HEOM states are rejected with a migration
+error.
+
 #### `build_heom_liouvillian`
 ```julia
-build_heom_liouvillian(params::HEOMParams; tol=1e-10) → (XOP, Ix, Pop)
+build_heom_liouvillian(system::HEOMTTSystem; tol=1e-12) → (XOP, Ix, Pop)
 ```
 Build HEOM Liouvillian super-operator in TT format.
 
@@ -199,7 +226,7 @@ HEOM equations:
          - i Σₖ (cₖ S ρₙ₋ₑₖ - cₖ* ρₙ₋ₑₖ S) √(nₖ/|cₖ|)
 ```
 
-TT structure: `ρ_vec | b₁ | b₂ | ... | bₙ`
+TT structure: `ket | bra | b₁ | b₂ | ... | bₙ`
 
 Returns:
 - `XOP`: HEOM Liouvillian (TTMatrix)
@@ -208,9 +235,10 @@ Returns:
 
 #### `build_initial_state`
 ```julia
-build_initial_state(params::HEOMParams, init_state::Int; tol=1e-12) → TTTensor
+build_initial_state(system::HEOMTTSystem, init_state::Int; tol=1e-12) → TTTensor
 ```
-Build initial density matrix |init_state⟩⟨init_state| ⊗ |0,0,...,0⟩.
+Build the twin-space initial density matrix
+`|init_state⟩_ket ⊗ |init_state⟩_bra ⊗ |0,0,...,0⟩`.
 
 ### Utilities (util.jl)
 

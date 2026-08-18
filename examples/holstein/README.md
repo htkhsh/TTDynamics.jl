@@ -60,6 +60,11 @@ The TPSD defaults are `pade_order=8`, `tpsd_tolerance=5e-2`, and
 the Padé order, TPSD tolerance, hierarchy local size, time step, and TT
 tolerances.
 
+## HEOM-TT checkpoint migration
+
+HEOM-TT checkpoints created before twin-space-v1 used one N^2 system core and
+must be regenerated; generic non-HEOM TT binary files are unaffected.
+
 ## Migrating from the ESPRIT example
 
 Replace `bcf_final_time_fs` with `validation_final_time_fs` and

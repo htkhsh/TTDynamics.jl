@@ -182,6 +182,52 @@ end
     @test occursin("[2, 3, 2]", sprint(showerror, wrong_error))
 end
 
+@testset "HEOM twin-space checkpoint compatibility" begin
+    system = twin_test_system()
+    initial_state = build_initial_state(system, 2; tol=1e-14)
+    old_layout = TTTensor([
+        reshape(ComplexF64[1, 0, 0, 0], 1, 4, 1),
+        reshape(ComplexF64[1, 0], 1, 2, 1),
+    ])
+
+    mktempdir() do directory
+        twin_path = joinpath(directory, "twin-space.ttbin")
+        old_path = joinpath(directory, "old-layout.ttbin")
+        save_tt_binary(twin_path, initial_state)
+        save_tt_binary(old_path, old_layout)
+
+        restored_initial_state = load_tt_binary(twin_path)
+        restored_old_layout = load_tt_binary(old_path)
+
+        @test restored_initial_state.cores == initial_state.cores
+        @test tt_dims(restored_initial_state) == heom_tt_dimensions(system)
+        @test root_density_matrix(restored_initial_state, system) ≈
+              ComplexF64[0 0; 0 1] atol=1e-12
+
+        old_error = try
+            TTDynamics._validate_heom_state(restored_old_layout, system)
+            nothing
+        catch error
+            error
+        end
+        @test old_error isa ArgumentError
+        @test occursin(
+            "old vectorized HEOM state is unsupported; regenerate it in twin-space format",
+            sprint(showerror, old_error),
+        )
+        @test_throws ArgumentError root_density_matrix(restored_old_layout, system)
+    end
+end
+
+@testset "HEOM twin-space example migration" begin
+    spin_boson_example = read(joinpath(@__DIR__, "..", "examples", "heom", "sb_ohmic_heomtt.jl"), String)
+    holstein_example = read(joinpath(@__DIR__, "..", "examples", "holstein", "holstein_brownian_heomtt.jl"), String)
+
+    @test occursin("function main()", spin_boson_example)
+    @test occursin("heom_tt_dimensions(params)", spin_boson_example)
+    @test occursin("heom_tt_dimensions(system)", holstein_example)
+end
+
 @testset "HEOM twin-space observables" begin
     system = twin_test_system()
     rho = ComplexF64[0.2 + 0.3im -0.1 + 0.4im; 0.7 - 0.2im 0.8 - 0.5im]

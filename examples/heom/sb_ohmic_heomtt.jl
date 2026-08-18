@@ -22,6 +22,7 @@ using CairoMakie
 
 include("../common/plot_utils.jl")
 
+function main()
 println("=" ^ 60)
 println("Spin-Boson with Ohmic Bath: HEOM-TT vs standard HEOM")
 println("=" ^ 60)
@@ -126,6 +127,9 @@ Nsteps = Int(t_end / dt_tt)
 
 # Build HEOMTTSystem using NoiseExp (already constructed for KaisouEOM HEOM)
 params = HEOMTTSystem(H_sys, noise, Nh)
+tt_dimensions = heom_tt_dimensions(params)
+println("  HEOM-TT mode dimensions [ket, bra, hierarchy...]: $tt_dimensions")
+println("  TT cores: 2 system cores + $(length(params.nb)) hierarchy cores = $(length(tt_dimensions))")
 
 # Build HEOM Liouvillian
 XOP, Ix, Pop = build_heom_liouvillian(params; tol=1e-10)
@@ -178,7 +182,6 @@ scheme = String(opts[:time_scheme])
 
 u = rho0_tt
 for i in 2:length(ts_tt)
-    global u
     # tAMEn step
     U = tkron(u, tt_ones(nt; T=ComplexF64))
     U, tgrid, _, _ = tamen(U, A_step, tol, opts)
@@ -318,3 +321,8 @@ println("    - Norm deviation: $(maximum(abs.(norm_tt .- 1.0)))")
 println()
 println("Simulation completed!")
 println("=" ^ 60)
+end
+
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end
