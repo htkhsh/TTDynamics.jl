@@ -144,6 +144,10 @@ function root_density_matrix(state::TTTensor, system::HEOMTTSystem)::Matrix{Comp
             ComplexF64.(bra_core[:, bra, :]) * hierarchy_environment
         )[1]
     end
+    all(isfinite, density) || throw(ArgumentError(
+        "reconstructed root density matrix contains nonfinite values for " *
+        "HEOM state with dimensions $(tt_dims(state))",
+    ))
     return density
 end
 
@@ -177,6 +181,15 @@ end
 function _heom_local_matrix(identity_factors::Vector{Matrix{ComplexF64}}, replacements...)
     factors = copy(identity_factors)
     for (index, factor) in replacements
+        checkbounds(Bool, factors, index) ||
+            throw(ArgumentError("HEOM local replacement core index $index is out of range"))
+        expected = size(identity_factors[index])
+        actual = size(factor)
+        core_context = index == 1 ? "ket" : index == 2 ? "bra" : "hierarchy $(index - 2)"
+        actual == expected || throw(ArgumentError(
+            "HEOM local replacement for $core_context core $index must have dimensions " *
+            "$expected; got $actual",
+        ))
         factors[index] = ComplexF64.(factor)
     end
     return _local_product_matrix(factors)
@@ -202,7 +215,10 @@ function build_heom_liouvillian(sys::HEOMTTSystem; tol::Float64=1e-12)
 
     hamiltonian_left = _heom_local_matrix(identity_factors, 1 => H)
     hamiltonian_right = _heom_local_matrix(identity_factors, 2 => transpose(H))
-    liouvillian = (-1im) * (hamiltonian_left - hamiltonian_right)
+    hamiltonian = hamiltonian_left - hamiltonian_right
+    decay_accumulator = nothing
+    upward_accumulator = nothing
+    downward_accumulator = nothing
 
     for k in 1:nbcf
         hierarchy_mode = k + 2
@@ -224,7 +240,13 @@ function build_heom_liouvillian(sys::HEOMTTSystem; tol::Float64=1e-12)
             hierarchy_mode => bminus_ops[k],
         )
 
-        liouvillian = liouvillian - decay - 1im * (upward_left - upward_right)
+        decay_accumulator = isnothing(decay_accumulator) ?
+                            decay : decay_accumulator + decay
+        decay_accumulator = tt_round(decay_accumulator, tol)
+
+        upward = upward_left - upward_right
+        upward_accumulator = isnothing(upward_accumulator) ?
+                             upward : upward_accumulator + upward
 
         if abs(noise.c1[k]) > tol
             downward_left = _heom_local_matrix(
@@ -232,7 +254,8 @@ function build_heom_liouvillian(sys::HEOMTTSystem; tol::Float64=1e-12)
                 1 => (noise.c1[k] / sqrt_abs_c) * V,
                 hierarchy_mode => bplus_ops[k],
             )
-            liouvillian = liouvillian - 1im * downward_left
+            downward_accumulator = isnothing(downward_accumulator) ?
+                                   downward_left : downward_accumulator + downward_left
         end
         if abs(noise.c2[k]) > tol
             downward_right = _heom_local_matrix(
@@ -240,12 +263,24 @@ function build_heom_liouvillian(sys::HEOMTTSystem; tol::Float64=1e-12)
                 2 => (noise.c2[k] / sqrt_abs_c) * conj(V),
                 hierarchy_mode => bplus_ops[k],
             )
-            liouvillian = liouvillian + 1im * downward_right
+            downward_accumulator = isnothing(downward_accumulator) ?
+                                   -downward_right : downward_accumulator - downward_right
         end
 
-        k % 10 == 0 && (liouvillian = tt_round(liouvillian, tol))
+        if k % 10 == 0
+            upward_accumulator = tt_round(upward_accumulator, tol)
+            !isnothing(downward_accumulator) &&
+                (downward_accumulator = tt_round(downward_accumulator, tol))
+        end
     end
 
+    upward_accumulator = tt_round(upward_accumulator, tol)
+    !isnothing(downward_accumulator) &&
+        (downward_accumulator = tt_round(downward_accumulator, tol))
+
+    liouvillian = (-1im) * hamiltonian - decay_accumulator - 1im * upward_accumulator
+    !isnothing(downward_accumulator) &&
+        (liouvillian = liouvillian - 1im * downward_accumulator)
     liouvillian = tt_round(liouvillian, tol)
     println("  XOP number of cores: $(length(liouvillian.cores))")
 

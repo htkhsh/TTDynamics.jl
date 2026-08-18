@@ -62,8 +62,18 @@ tolerances.
 
 ## HEOM-TT checkpoint migration
 
-HEOM-TT checkpoints created before twin-space-v1 used one N^2 system core and
-must be regenerated; generic non-HEOM TT binary files are unaffected.
+Any application that saves a Holstein HEOM-TT checkpoint must record and
+validate this application metadata alongside the TT file:
+
+```text
+heom_representation = "twin-space-v1"
+```
+
+The generic `TTTensor`/`TTMatrix` binary format is unchanged and does not store
+this HEOM-specific field itself. HEOM-TT checkpoints created before
+`twin-space-v1` used one `N^2` system core and must be regenerated rather than
+relabeled or automatically converted; generic non-HEOM TT binary files remain
+unaffected.
 
 ## Migrating from the ESPRIT example
 

@@ -194,9 +194,18 @@ ket and bra indices.
 The builder signatures are unchanged, but every HEOM state, observable, and
 operator now has two system dimensions: `heom_tt_dimensions(system)` returns
 `[N, N, nb...]`. Consequently, HEOM-TT checkpoints saved with the old
-`[N^2, nb...]` layout are incompatible and must be regenerated. This semantic
-restriction applies only to HEOM states; generic non-HEOM TT binary files are
-unaffected.
+`[N^2, nb...]` layout are incompatible and must be regenerated, not relabeled
+or automatically converted. Applications that save an HEOM-TT checkpoint must
+store and validate the following application metadata alongside the TT data:
+
+```text
+heom_representation = "twin-space-v1"
+```
+
+The generic `TTTensor`/`TTMatrix` binary format itself is unchanged and does
+not embed this HEOM-specific metadata. Generic non-HEOM TT binary files remain
+compatible; the representation check belongs to the application that assigns
+HEOM meaning to a loaded tensor.
 
 #### `heom_tt_dimensions`
 ```julia
