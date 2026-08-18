@@ -90,9 +90,31 @@ using Test
             mkdir(directory_target)
             marker = joinpath(directory_target, "marker")
             write(marker, "preserve")
+            siblings_before_failure = sort(readdir(directory))
             @test_throws Base.IOError save_tt_binary(directory_target, tt; overwrite=true)
             @test isdir(directory_target)
             @test read(marker, String) == "preserve"
+            @test sort(readdir(directory)) == siblings_before_failure
+        end
+    end
+
+    @testset "runtime atomic rename" begin
+        mktempdir() do directory
+            source = joinpath(directory, "source")
+            target = joinpath(directory, "target")
+            write(source, "new")
+            write(target, "old")
+
+            @test TTDynamics._atomic_rename(source, target) === nothing
+            @test !ispath(source)
+            @test read(target, String) == "new"
+
+            directory_target = joinpath(directory, "directory")
+            mkdir(directory_target)
+            write(source, "preserved")
+            @test_throws Base.IOError TTDynamics._atomic_rename(source, directory_target)
+            @test read(source, String) == "preserved"
+            @test isdir(directory_target)
         end
     end
 
@@ -101,10 +123,10 @@ using Test
         append_u32!(bytes, x) = append!(bytes, reinterpret(UInt8, [htol(UInt32(x))]))
         append_u64!(bytes, x) = append!(bytes, reinterpret(UInt8, [htol(UInt64(x))]))
 
-        function tensor_file_bytes(core_count)
+        function tensor_file_bytes(core_count; scalar_code=0x02)
             bytes = UInt8[codeunits("TTDYNBIN")...]
             append_u16!(bytes, 1)
-            push!(bytes, 0x01, 0x02)
+            push!(bytes, 0x01, scalar_code)
             append_u32!(bytes, core_count)
             bytes
         end
@@ -148,6 +170,7 @@ using Test
             zero_cores = copy(valid); zero_cores[13:16] .= 0x00
 
             rejected("magic.ttbin", bad_magic)
+            rejected("truncated-magic.ttbin", valid[1:7])
             rejected("version.ttbin", bad_version)
             rejected("kind.ttbin", bad_kind)
             rejected("scalar.ttbin", bad_scalar)
@@ -163,6 +186,26 @@ using Test
             huge_dimension = tensor_file_bytes(1)
             append_tensor_core!(huge_dimension, (UInt64(typemax(Int)) + 1, 1, 1), 0)
             rejected("huge-dimension.ttbin", huge_dimension)
+
+            dimension_product_overflow = tensor_file_bytes(1)
+            append_tensor_core!(
+                dimension_product_overflow, (UInt64(typemax(Int)), 2, 1), 0)
+            error = rejection("dimension-product-overflow.ttbin", dimension_product_overflow)
+            @test occursin("core 1 element count overflows Int", sprint(showerror, error))
+
+            payload_byte_overflow = tensor_file_bytes(1; scalar_code=0x04)
+            append_tensor_core!(
+                payload_byte_overflow, (1, UInt64(typemax(Int) ÷ 8), 1), 0)
+            error = rejection("payload-byte-overflow.ttbin", payload_byte_overflow)
+            @test occursin("core 1 payload byte count overflows Int", sprint(showerror, error))
+
+            header_only_huge_payload = tensor_file_bytes(1)
+            append_tensor_core!(
+                header_only_huge_payload, (1, UInt64(typemax(Int) ÷ 16), 1), 0)
+            error = rejection("header-only-huge-payload.ttbin", header_only_huge_payload)
+            message = sprint(showerror, error)
+            @test occursin("core 1 payload", message)
+            @test occursin("bytes remain", message)
 
             rank_mismatch = tensor_file_bytes(2)
             append_tensor_core!(rank_mismatch, (1, 2, 2), 4)

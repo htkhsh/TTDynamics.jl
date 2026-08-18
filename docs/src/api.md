@@ -251,18 +251,33 @@ TTDynamics binary format. It supports `Float32`, `Float64`, `ComplexF32`, and
 `overwrite=true` to replace an existing file. By default, saving atomically
 publishes only a completed sibling temporary file when the destination does not
 exist, so a newly created destination is never left with a partially written
-payload. With `overwrite=true`, replacement follows filesystem rename semantics
-and never recursively removes a directory destination.
+payload. With `overwrite=true`, a low-level Julia-runtime rename atomically
+replaces a regular-file destination and never recursively removes a directory
+destination.
 
 `load_tt_binary` automatically detects whether a file contains a tensor or a
 matrix. It rejects unknown format versions, malformed files, and files with
 trailing content.
 
 Version 1 stores fields in this order: the 8-byte magic `TTDYNBIN`, little-endian
-`UInt16(1)` version, object `UInt8`, scalar `UInt8`, little-endian `UInt32` core
-count, then each core's little-endian `UInt64` dimensions followed by its
-column-major values. Complex values interleave real and imaginary components.
-The format does not use Julia `Serialization`.
+`UInt16(1)` version, object-kind `UInt8`, scalar-type `UInt8`, little-endian
+`UInt32` core count, then the core records. These published numeric codes are
+permanent and must never be reassigned:
+
+| Field | Code | Meaning |
+| --- | ---: | --- |
+| Object kind | `1` | `TTTensor` |
+| Object kind | `2` | `TTMatrix` |
+| Scalar type | `1` | `Float32` |
+| Scalar type | `2` | `Float64` |
+| Scalar type | `3` | `ComplexF32` |
+| Scalar type | `4` | `ComplexF64` |
+
+Each `TTTensor` core record has exactly three little-endian `UInt64`
+dimensions in `(r_left, n, r_right)` order. Each `TTMatrix` core record has
+exactly four in `(r_left, n, m, r_right)` order. The dimensions are followed by
+column-major scalar values. Complex values interleave their real and imaginary
+components. The format does not use Julia `Serialization`.
 
 ---
 

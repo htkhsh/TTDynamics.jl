@@ -53,20 +53,49 @@ _read_scalar(io::IO, ::Type{T}) where {T<:AbstractFloat} =
 _read_scalar(io::IO, ::Type{Complex{T}}) where {T<:AbstractFloat} =
     Complex{T}(_read_component(io, T), _read_component(io, T))
 
+_encoded_scalar_bytes(::Type{Float32}) = 4
+_encoded_scalar_bytes(::Type{Float64}) = 8
+_encoded_scalar_bytes(::Type{ComplexF32}) = 8
+_encoded_scalar_bytes(::Type{ComplexF64}) = 16
+
 _format_error(message) = throw(ArgumentError("invalid TT binary file: $message"))
+
+function _atomic_rename(oldpath::AbstractString, newpath::AbstractString)
+    old = String(oldpath)
+    new = String(newpath)
+    status = ccall(:jl_fs_rename, Int32, (Cstring, Cstring), old, new)
+    status < 0 && Base.uv_error("rename($(repr(old)), $(repr(new)))", status)
+    nothing
+end
 
 function _checked_dimensions(raw::NTuple{N,UInt64}, core_index::Int) where {N}
     any(iszero, raw) && _format_error("core $core_index has a zero dimension")
     any(value -> value > UInt64(typemax(Int)), raw) &&
         _format_error("core $core_index has a dimension larger than typemax(Int)")
     dimensions = ntuple(i -> Int(raw[i]), N)
-    try
+    element_count = try
         foldl(Base.checked_mul, dimensions; init=1)
     catch error
         error isa OverflowError || rethrow()
         _format_error("core $core_index element count overflows Int")
     end
-    dimensions
+    dimensions, element_count
+end
+
+function _validate_core_payload(io::IO, ::Type{T}, element_count::Int,
+                                core_index::Int) where {T}
+    payload_bytes = try
+        Base.checked_mul(element_count, _encoded_scalar_bytes(T))
+    catch error
+        error isa OverflowError || rethrow()
+        _format_error("core $core_index payload byte count overflows Int")
+    end
+    remaining_bytes = filesize(io) - position(io)
+    payload_bytes <= remaining_bytes ||
+        _format_error(
+            "core $core_index payload requires $payload_bytes bytes, " *
+            "but only $remaining_bytes bytes remain")
+    nothing
 end
 
 _object_kind(::TTTensor) = _TT_TENSOR_KIND
@@ -131,10 +160,11 @@ function _read_tt(io::IO)
         sizehint!(cores, min(core_count, 16))
         previous_right_rank = 0
         for index in 1:core_count
-            dimensions = _checked_dimensions(
+            dimensions, element_count = _checked_dimensions(
                 ntuple(_ -> _read_le(io, UInt64), ndims), index)
             index > 1 && previous_right_rank != dimensions[1] &&
                 _format_error("invalid TT ranks: core $index has a mismatched left rank")
+            _validate_core_payload(io, T, element_count, index)
             push!(cores, _read_core(io, T, dimensions))
             previous_right_rank = dimensions[end]
         end
@@ -192,7 +222,7 @@ function save_tt_binary(path::AbstractString,
             throw(ArgumentError("target already exists: $target"))
         end
         if overwrite
-            Base.Filesystem.rename(temporary_path, target)
+            _atomic_rename(temporary_path, target)
             temporary_path = nothing
         else
             Base.Filesystem.hardlink(temporary_path, target)
