@@ -31,6 +31,41 @@ function unchecked_holstein_config(config; site_count=config.site_count,
     return HolsteinConfig(values...)
 end
 
+function metadata_error(f)
+    try
+        f()
+    catch error
+        @test error isa ArgumentError
+        return error
+    end
+    error("expected ArgumentError")
+end
+
+function metadata_fixture()
+    config = HolsteinConfig(
+        site_count=2,
+        site_energies_cm=[10.0, -5.0],
+        hopping_cm=2.0,
+        final_time_fs=1.0,
+        hierarchy_local_size=2,
+        operator_tolerance=1e-14,
+    )
+    problem = current_correlation_problem(config)
+    decomposition = (
+        exponents=ComplexF64[0.1 + 0.2im, 0.3 - 0.4im],
+        coefficients=ComplexF64[0.5 - 0.6im, 0.7 + 0.8im],
+    )
+    state = build_initial_state(problem.system, config.initial_site; tol=1e-14)
+    metadata = equilibrium_metadata(
+        config,
+        decomposition,
+        problem,
+        state;
+        equilibration_time_fs=1000.0,
+    )
+    return (; config, decomposition, problem, state, metadata)
+end
+
 @testset "Holstein current correlation utilities" begin
     config = HolsteinConfig(
         site_count=3,
@@ -65,6 +100,119 @@ end
     @test_throws ArgumentError periodic_current_operator(
         unchecked_holstein_config(config; hopping_cm=NaN),
     )
+end
+
+@testset "Holstein equilibrium metadata" begin
+    fixture = metadata_fixture()
+    (; config, decomposition, problem, state, metadata) = fixture
+
+    @test metadata["identifier"] == "TTDynamics.HolsteinEquilibrium"
+    @test metadata["version"] == 1
+    @test metadata["heom_representation"] == "twin-space-v1"
+    @test metadata["equilibration_time_fs"] == 1000.0
+    for field in fieldnames(HolsteinConfig)
+        expected = field === :pade_type ? string(config.pade_type) : getfield(config, field)
+        @test metadata[String(field)] == expected
+    end
+    @test metadata["site_count"] == config.site_count
+    @test metadata["site_energies_cm"] == config.site_energies_cm
+    @test metadata["hopping_cm"] == config.hopping_cm
+    @test metadata["brownian_frequency_cm"] == config.brownian_frequency_cm
+    @test metadata["brownian_damping_cm"] == config.brownian_damping_cm
+    @test metadata["reorganization_energy_cm"] == config.reorganization_energy_cm
+    @test metadata["temperature_K"] == config.temperature_K
+    @test metadata["time_step_fs"] == config.time_step_fs
+    @test metadata["pade_order"] == config.pade_order
+    @test metadata["pade_type"] == string(config.pade_type)
+    @test metadata["tpsd_tolerance"] == config.tpsd_tolerance
+    @test metadata["hierarchy_local_size"] == config.hierarchy_local_size
+    @test metadata["exponents_real"] == real.(decomposition.exponents)
+    @test metadata["exponents_imag"] == imag.(decomposition.exponents)
+    @test metadata["coefficients_real"] == real.(decomposition.coefficients)
+    @test metadata["coefficients_imag"] == imag.(decomposition.coefficients)
+    @test metadata["hierarchy_sizes"] == problem.system.nb
+    @test metadata["tt_dimensions"] == tt_dims(state)
+
+    mktempdir() do directory
+        path = joinpath(directory, "equilibrium.toml")
+        @test write_equilibrium_metadata(path, metadata) == path
+        @test read_equilibrium_metadata(path) == metadata
+        @test_throws ArgumentError write_equilibrium_metadata(path, metadata)
+        replacement = deepcopy(metadata)
+        replacement["equilibration_time_fs"] = 500.0
+        @test write_equilibrium_metadata(path, replacement; overwrite=true) == path
+        @test read_equilibrium_metadata(path) == replacement
+        missing_error = metadata_error(() -> read_equilibrium_metadata(
+            joinpath(directory, "missing.toml"),
+        ))
+        @test occursin("metadata file", sprint(showerror, missing_error))
+    end
+
+    @test validate_equilibrium_state(state, metadata, config, decomposition, problem) === state
+
+    for (field, replacement) in (
+        "heom_representation" => "vectorized-v0",
+        "hopping_cm" => 3.0,
+        "exponents_imag" => [0.2, -0.3],
+        "hierarchy_sizes" => [3, 2],
+        "tt_dimensions" => [2, 2, 3, 2],
+        "identifier" => "unsupported",
+        "version" => 2,
+        "coefficients_real" => [NaN, 0.7],
+    )
+        changed = deepcopy(metadata)
+        changed[field] = replacement
+        error = metadata_error(() -> validate_equilibrium_state(
+            state,
+            changed,
+            config,
+            decomposition,
+            problem,
+        ))
+        @test occursin(field, sprint(showerror, error))
+    end
+
+    old_layout = TTTensor([
+        reshape(ComplexF64[1, 0, 0, 0], 1, 4, 1),
+        reshape(ComplexF64[1, 0], 1, 2, 1),
+        reshape(ComplexF64[1, 0], 1, 2, 1),
+    ])
+    old_error = metadata_error(() -> validate_equilibrium_state(
+        old_layout,
+        metadata,
+        config,
+        decomposition,
+        problem,
+    ))
+    @test occursin("old vectorized HEOM state is unsupported", sprint(showerror, old_error))
+
+    mktempdir() do directory
+        state_path = joinpath(directory, "equilibrium.ttbin")
+        metadata_path = joinpath(directory, "equilibrium.toml")
+        save_tt_binary(state_path, state)
+        write_equilibrium_metadata(metadata_path, metadata)
+        restored = load_tt_binary(state_path)
+        @test validate_equilibrium_state(
+            restored,
+            read_equilibrium_metadata(metadata_path),
+            config,
+            decomposition,
+            problem,
+        ).cores == state.cores
+
+        matrix = TTMatrix([
+            reshape(ComplexF64[1], 1, 1, 1, 1),
+        ])
+        save_tt_binary(state_path, matrix; overwrite=true)
+        error = metadata_error(() -> validate_equilibrium_state(
+            load_tt_binary(state_path),
+            metadata,
+            config,
+            decomposition,
+            problem,
+        ))
+        @test occursin("TTTensor", sprint(showerror, error))
+    end
 end
 
 @testset "Holstein current twin-space operators" begin

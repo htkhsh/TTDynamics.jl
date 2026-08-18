@@ -1,8 +1,347 @@
 using LinearAlgebra
 using Statistics
+# This helper is included by the package test suite, whose isolated project does
+# not declare example-only stdlibs. Resolve TOML by its standard-library UUID so
+# it remains an example dependency rather than a TTDynamics package dependency.
+if !isdefined(@__MODULE__, :TOML)
+    @eval const TOML = Base.require(Base.PkgId(
+        Base.UUID("fa267f1f-6049-4f14-aa54-33bafae1ed76"),
+        "TOML",
+    ))
+end
+using .TOML
 using TTDynamics
 using TTSolver
 using KaisouEOM: icm2ifs
+
+const _EQUILIBRIUM_METADATA_IDENTIFIER = "TTDynamics.HolsteinEquilibrium"
+const _EQUILIBRIUM_METADATA_VERSION = 1
+const _EQUILIBRIUM_HEOM_REPRESENTATION = "twin-space-v1"
+
+const _EQUILIBRIUM_CONFIG_INTEGER_FIELDS = (
+    :site_count,
+    :initial_site,
+    :pade_order,
+    :validation_sample_count,
+    :hierarchy_local_size,
+    :temporal_basis_size,
+    :sweep_count,
+    :local_iterations,
+    :kick_rank,
+    :progress_interval,
+)
+const _EQUILIBRIUM_CONFIG_FLOAT_FIELDS = (
+    :hopping_cm,
+    :brownian_frequency_cm,
+    :brownian_damping_cm,
+    :reorganization_energy_cm,
+    :temperature_K,
+    :final_time_fs,
+    :time_step_fs,
+    :tpsd_tolerance,
+    :validation_final_time_fs,
+    :bcf_upper_bound_cm,
+    :tamen_tolerance,
+    :operator_tolerance,
+    :state_rounding_tolerance,
+)
+
+_metadata_field_name(field::Symbol) = String(field)
+
+function _metadata_value(metadata, field::AbstractString)
+    haskey(metadata, field) || throw(ArgumentError("$field is missing from equilibrium metadata"))
+    return metadata[field]
+end
+
+function _metadata_string(metadata, field::AbstractString)
+    value = _metadata_value(metadata, field)
+    value isa AbstractString || throw(ArgumentError("$field must be a string"))
+    return String(value)
+end
+
+function _metadata_integer(metadata, field::AbstractString)
+    value = _metadata_value(metadata, field)
+    value isa Integer && !(value isa Bool) ||
+        throw(ArgumentError("$field must be an integer"))
+    return Int(value)
+end
+
+function _metadata_float(metadata, field::AbstractString)
+    value = _metadata_value(metadata, field)
+    value isa Real && !(value isa Bool) && isfinite(value) ||
+        throw(ArgumentError("$field must be a finite real number"))
+    return Float64(value)
+end
+
+function _metadata_float_vector(metadata, field::AbstractString)
+    value = _metadata_value(metadata, field)
+    value isa AbstractVector || throw(ArgumentError("$field must be an array"))
+    all(element -> element isa Real && !(element isa Bool) && isfinite(element), value) ||
+        throw(ArgumentError("$field must contain finite real numbers"))
+    return Float64.(value)
+end
+
+function _metadata_integer_vector(metadata, field::AbstractString)
+    value = _metadata_value(metadata, field)
+    value isa AbstractVector || throw(ArgumentError("$field must be an array"))
+    all(element -> element isa Integer && !(element isa Bool), value) ||
+        throw(ArgumentError("$field must contain integers"))
+    return Int.(value)
+end
+
+function _validate_toml_value(value, field::AbstractString)
+    if value isa AbstractString || value isa Bool ||
+       (value isa Integer && !(value isa Bool))
+        return nothing
+    elseif value isa AbstractFloat
+        isfinite(value) || throw(ArgumentError("$field must be finite"))
+        return nothing
+    elseif value isa AbstractVector
+        for (index, element) in pairs(value)
+            _validate_toml_value(element, "$field[$index]")
+        end
+        return nothing
+    elseif value isa AbstractDict
+        for (key, element) in pairs(value)
+            key isa AbstractString || throw(ArgumentError("$field dictionary keys must be strings"))
+            _validate_toml_value(element, "$field.$key")
+        end
+        return nothing
+    end
+    throw(ArgumentError("$field is not TOML-safe metadata"))
+end
+
+function _validate_equilibrium_metadata(metadata)
+    metadata isa AbstractDict || throw(ArgumentError("metadata must be a dictionary"))
+    for (field, value) in pairs(metadata)
+        field isa AbstractString || throw(ArgumentError("metadata keys must be strings"))
+        _validate_toml_value(value, String(field))
+    end
+
+    _metadata_string(metadata, "identifier") == _EQUILIBRIUM_METADATA_IDENTIFIER ||
+        throw(ArgumentError("identifier is unsupported"))
+    _metadata_integer(metadata, "version") == _EQUILIBRIUM_METADATA_VERSION ||
+        throw(ArgumentError("version is unsupported"))
+    _metadata_string(metadata, "heom_representation") == _EQUILIBRIUM_HEOM_REPRESENTATION ||
+        throw(ArgumentError("heom_representation is unsupported"))
+    _metadata_float(metadata, "equilibration_time_fs")
+
+    _metadata_integer(metadata, "site_count")
+    _metadata_float_vector(metadata, "site_energies_cm")
+    for field in _EQUILIBRIUM_CONFIG_FLOAT_FIELDS
+        _metadata_float(metadata, _metadata_field_name(field))
+    end
+    for field in _EQUILIBRIUM_CONFIG_INTEGER_FIELDS
+        _metadata_integer(metadata, _metadata_field_name(field))
+    end
+    _metadata_string(metadata, "pade_type")
+
+    exponent_real = _metadata_float_vector(metadata, "exponents_real")
+    exponent_imag = _metadata_float_vector(metadata, "exponents_imag")
+    coefficient_real = _metadata_float_vector(metadata, "coefficients_real")
+    coefficient_imag = _metadata_float_vector(metadata, "coefficients_imag")
+    length(exponent_real) == length(exponent_imag) ||
+        throw(ArgumentError("exponents_imag length must equal exponents_real length"))
+    length(coefficient_real) == length(coefficient_imag) ||
+        throw(ArgumentError("coefficients_imag length must equal coefficients_real length"))
+    length(exponent_real) == length(coefficient_real) ||
+        throw(ArgumentError("coefficients_real length must equal exponents_real length"))
+    _metadata_integer(metadata, "tpsd_term_count") == length(exponent_real) ||
+        throw(ArgumentError("tpsd_term_count must equal the decomposition array length"))
+    _metadata_integer_vector(metadata, "hierarchy_sizes")
+    _metadata_integer_vector(metadata, "tt_dimensions")
+    return nothing
+end
+
+function _equilibrium_atomic_rename(oldpath::AbstractString, newpath::AbstractString)
+    old = String(oldpath)
+    new = String(newpath)
+    status = ccall(:jl_fs_rename, Int32, (Cstring, Cstring), old, new)
+    status < 0 && Base.uv_error("rename($(repr(old)), $(repr(new)))", status)
+    return nothing
+end
+
+"""
+    equilibrium_metadata(config, decomposition, problem, state;
+                         equilibration_time_fs) -> Dict{String,Any}
+
+Describe a saved twin-space Holstein HEOM equilibrium state using TOML-safe
+values. Complex TPSD data is represented by parallel real and imaginary arrays.
+"""
+function equilibrium_metadata(config::HolsteinConfig, decomposition, problem,
+                              state::TTTensor; equilibration_time_fs)::Dict{String,Any}
+    metadata = Dict{String,Any}(
+        "identifier" => _EQUILIBRIUM_METADATA_IDENTIFIER,
+        "version" => _EQUILIBRIUM_METADATA_VERSION,
+        "heom_representation" => _EQUILIBRIUM_HEOM_REPRESENTATION,
+        "equilibration_time_fs" => Float64(equilibration_time_fs),
+        "site_count" => config.site_count,
+        "site_energies_cm" => copy(config.site_energies_cm),
+        "pade_type" => string(config.pade_type),
+        "exponents_real" => real.(decomposition.exponents),
+        "exponents_imag" => imag.(decomposition.exponents),
+        "coefficients_real" => real.(decomposition.coefficients),
+        "coefficients_imag" => imag.(decomposition.coefficients),
+        "tpsd_term_count" => length(decomposition.exponents),
+        "hierarchy_sizes" => copy(problem.system.nb),
+        "tt_dimensions" => tt_dims(state),
+    )
+    for field in _EQUILIBRIUM_CONFIG_FLOAT_FIELDS
+        metadata[_metadata_field_name(field)] = getfield(config, field)
+    end
+    for field in _EQUILIBRIUM_CONFIG_INTEGER_FIELDS
+        metadata[_metadata_field_name(field)] = getfield(config, field)
+    end
+    _validate_equilibrium_metadata(metadata)
+    return metadata
+end
+
+"""
+    write_equilibrium_metadata(path, metadata; overwrite=false) -> String
+
+Atomically publish TOML metadata after writing a sibling temporary file.
+"""
+function write_equilibrium_metadata(path::AbstractString, metadata; overwrite::Bool=false)::String
+    target = String(path)
+    _validate_equilibrium_metadata(metadata)
+    !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
+
+    temporary_path = nothing
+    try
+        temporary_path, io = mktemp(dirname(abspath(target)))
+        try
+            TOML.print(io, metadata)
+        finally
+            close(io)
+        end
+        !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
+        if overwrite
+            _equilibrium_atomic_rename(temporary_path, target)
+            temporary_path = nothing
+        else
+            Base.Filesystem.hardlink(temporary_path, target)
+        end
+        return target
+    finally
+        temporary_path === nothing || rm(temporary_path; force=true)
+    end
+end
+
+"""
+    read_equilibrium_metadata(path) -> Dict{String,Any}
+
+Read a TOML equilibrium-state metadata sidecar without changing its contents.
+Missing metadata paths are reported as `ArgumentError` so callers receive the
+same application-level validation failure as malformed metadata.
+"""
+function read_equilibrium_metadata(path::AbstractString)::Dict{String,Any}
+    source = String(path)
+    isfile(source) || throw(ArgumentError("metadata file does not exist: $source"))
+    return TOML.parsefile(source)
+end
+
+function _require_exact_metadata(field::AbstractString, actual, expected)
+    actual == expected || throw(ArgumentError("$field does not match the reconstructed problem"))
+    return nothing
+end
+
+function _require_approximate_metadata(field::AbstractString, actual, expected;
+                                       rtol::Real, atol::Real)
+    isapprox(actual, expected; rtol, atol) ||
+        throw(ArgumentError("$field does not match the reconstructed problem"))
+    return nothing
+end
+
+"""
+    validate_equilibrium_state(state, metadata, config, decomposition, problem;
+                               rtol=1e-12, atol=1e-14) -> TTTensor
+
+Reject metadata or a TT state that is incompatible with the reconstructed
+twin-space Holstein HEOM problem.
+"""
+function validate_equilibrium_state(state, metadata, config::HolsteinConfig,
+                                    decomposition, problem;
+                                    rtol::Real=1e-12, atol::Real=1e-14)::TTTensor
+    rtol >= 0 || throw(ArgumentError("rtol must be nonnegative"))
+    atol >= 0 || throw(ArgumentError("atol must be nonnegative"))
+    state isa TTTensor || throw(ArgumentError("equilibrium state must be a TTTensor"))
+    root_density_matrix(state, problem.system)
+    _validate_equilibrium_metadata(metadata)
+
+    _require_exact_metadata("site_count", _metadata_integer(metadata, "site_count"), config.site_count)
+    _require_approximate_metadata(
+        "site_energies_cm",
+        _metadata_float_vector(metadata, "site_energies_cm"),
+        config.site_energies_cm;
+        rtol,
+        atol,
+    )
+    for field in _EQUILIBRIUM_CONFIG_FLOAT_FIELDS
+        name = _metadata_field_name(field)
+        _require_approximate_metadata(name, _metadata_float(metadata, name), getfield(config, field); rtol, atol)
+    end
+    for field in _EQUILIBRIUM_CONFIG_INTEGER_FIELDS
+        name = _metadata_field_name(field)
+        _require_exact_metadata(name, _metadata_integer(metadata, name), getfield(config, field))
+    end
+    _require_exact_metadata("pade_type", _metadata_string(metadata, "pade_type"), string(config.pade_type))
+
+    metadata_exponents_real = _metadata_float_vector(metadata, "exponents_real")
+    metadata_exponents_imag = _metadata_float_vector(metadata, "exponents_imag")
+    metadata_coefficients_real = _metadata_float_vector(metadata, "coefficients_real")
+    metadata_coefficients_imag = _metadata_float_vector(metadata, "coefficients_imag")
+    metadata_exponents = complex.(metadata_exponents_real, metadata_exponents_imag)
+    metadata_coefficients = complex.(metadata_coefficients_real, metadata_coefficients_imag)
+    if !isapprox(metadata_exponents, decomposition.exponents; rtol, atol)
+        _require_approximate_metadata(
+            "exponents_real",
+            metadata_exponents_real,
+            real.(decomposition.exponents);
+            rtol,
+            atol,
+        )
+        _require_approximate_metadata(
+            "exponents_imag",
+            metadata_exponents_imag,
+            imag.(decomposition.exponents);
+            rtol,
+            atol,
+        )
+        throw(ArgumentError("exponents do not match the reconstructed problem"))
+    end
+    if !isapprox(metadata_coefficients, decomposition.coefficients; rtol, atol)
+        _require_approximate_metadata(
+            "coefficients_real",
+            metadata_coefficients_real,
+            real.(decomposition.coefficients);
+            rtol,
+            atol,
+        )
+        _require_approximate_metadata(
+            "coefficients_imag",
+            metadata_coefficients_imag,
+            imag.(decomposition.coefficients);
+            rtol,
+            atol,
+        )
+        throw(ArgumentError("coefficients do not match the reconstructed problem"))
+    end
+    _require_exact_metadata(
+        "tpsd_term_count",
+        _metadata_integer(metadata, "tpsd_term_count"),
+        length(decomposition.exponents),
+    )
+    _require_exact_metadata(
+        "hierarchy_sizes",
+        _metadata_integer_vector(metadata, "hierarchy_sizes"),
+        problem.system.nb,
+    )
+    expected_dimensions = heom_tt_dimensions(problem.system)
+    metadata_dimensions = _metadata_integer_vector(metadata, "tt_dimensions")
+    _require_exact_metadata("tt_dimensions", metadata_dimensions, expected_dimensions)
+    _require_exact_metadata("tt_dimensions", tt_dims(state), metadata_dimensions)
+    return state
+end
 
 """
     periodic_current_operator(config) -> Matrix{ComplexF64}
