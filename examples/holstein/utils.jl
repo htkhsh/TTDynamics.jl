@@ -163,6 +163,10 @@ function validate_config(config::HolsteinConfig)
         config.state_rounding_tolerance,
     )) || throw(ArgumentError("physical and numerical scales must be positive"))
 
+    config.brownian_damping_cm < 2 * config.brownian_frequency_cm ||
+        throw(ArgumentError(
+            "brownian_damping_cm must be less than twice brownian_frequency_cm for underdamped QFiND Brownian poles",
+        ))
     config.pade_order > 0 ||
         throw(ArgumentError("pade_order must be positive"))
     config.pade_type in (:N, :Nm1) ||

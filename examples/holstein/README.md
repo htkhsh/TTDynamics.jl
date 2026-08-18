@@ -59,3 +59,10 @@ The TPSD defaults are `pade_order=8`, `tpsd_tolerance=5e-2`, and
 `pade_type=:Nm1`. Before treating results as production calculations, converge
 the Padé order, TPSD tolerance, hierarchy local size, time step, and TT
 tolerances.
+
+## Migrating from the ESPRIT example
+
+Replace `bcf_final_time_fs` with `validation_final_time_fs` and
+`bcf_sample_count` with `validation_sample_count`. `bcf_fit_tolerance` has no
+one-to-one replacement; choose `pade_order` and `tpsd_tolerance` for the TPSD
+decomposition instead.

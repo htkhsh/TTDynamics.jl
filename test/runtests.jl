@@ -50,6 +50,10 @@ include("../examples/holstein/utils.jl")
     @test_throws ArgumentError HolsteinConfig(tpsd_tolerance=0.0)
     @test_throws ArgumentError HolsteinConfig(pade_type=:invalid)
     @test_throws ArgumentError HolsteinConfig(validation_sample_count=1)
+    @test_throws ArgumentError HolsteinConfig(
+        brownian_frequency_cm=100.0,
+        brownian_damping_cm=200.0,
+    )
 end
 
 @testset "KSL example utilities" begin
