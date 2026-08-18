@@ -131,9 +131,13 @@ end
     baths = [BathExp(ComplexF64[0.1], ComplexF64[0.02], V) for V in projectors]
     noise = NoiseExp(baths)
     system = HEOMTTSystem(ComplexF64[0 -1; -1 0], noise, 2)
-    _, trace_observable, populations = build_heom_liouvillian(system; tol=1e-12)
+    liouvillian, trace_observable, populations = build_heom_liouvillian(system; tol=1e-12)
     rho0 = build_initial_state(system, 1; tol=1e-12)
 
+    @test tt_dims(liouvillian) == ([2, 2, 2, 2], [2, 2, 2, 2])
+    @test tt_dims(trace_observable) == [2, 2, 2, 2]
+    @test all(population -> tt_dims(population) == [2, 2, 2, 2], populations)
+    @test tt_dims(rho0) == [2, 2, 2, 2]
     @test real(tt_dot(trace_observable, rho0)) ≈ 1.0
     @test real(tt_dot(populations[1], rho0)) ≈ 1.0
     @test real(tt_dot(populations[2], rho0)) ≈ 0.0 atol=1e-14
