@@ -32,6 +32,8 @@ export PhysicalQuantity,
        franck_condon_factors,
        estimate_basis_size,
        estimate_basis_sizes,
+       save_tt_binary,
+       load_tt_binary,
        # TFD types and functions
        BosonicTFD,
        BosonicEnv,
@@ -47,5 +49,6 @@ include("tt_states.jl")
 include("util.jl")
 include("tfd.jl")
 include("heom.jl")
+include("tt_io.jl")
 
 end
