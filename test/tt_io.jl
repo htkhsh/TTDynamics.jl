@@ -45,4 +45,20 @@ using Test
             @test bytes[11:14] == UInt8[0x01, 0x01, 0x01, 0x00]
         end
     end
+
+    @testset "one object per file" begin
+        mktempdir() do directory
+            first_path = joinpath(directory, "first.ttbin")
+            second_path = joinpath(directory, "second.ttbin")
+            first = TTTensor([reshape(Float32[1], 1, 1, 1)])
+            second = TTTensor([reshape(Float32[2], 1, 1, 1)])
+            save_tt_binary(first_path, first)
+            save_tt_binary(second_path, second)
+            open(first_path, "a") do io
+                write(io, read(second_path))
+            end
+
+            @test_throws ArgumentError load_tt_binary(first_path)
+        end
+    end
 end

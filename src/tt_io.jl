@@ -123,6 +123,8 @@ end
 
 function load_tt_binary(path::AbstractString)
     open(String(path), "r") do io
-        _read_tt(io)
+        tt = _read_tt(io)
+        eof(io) || throw(ArgumentError("unexpected trailing data in TT binary file"))
+        tt
     end
 end
