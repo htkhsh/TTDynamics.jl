@@ -23,6 +23,14 @@ function current_correlation_problem(config)
     return (; system, liouvillian, trace_observable, population_observables)
 end
 
+function unchecked_holstein_config(config; site_count=config.site_count,
+                                   hopping_cm=config.hopping_cm)
+    values = Any[getfield(config, index) for index in 1:fieldcount(HolsteinConfig)]
+    values[1] = site_count
+    values[3] = hopping_cm
+    return HolsteinConfig(values...)
+end
+
 @testset "Holstein current correlation utilities" begin
     config = HolsteinConfig(
         site_count=3,
@@ -48,6 +56,15 @@ end
     )
     current2 = periodic_current_operator(config2)
     @test current2 == ComplexF64[0 -1im * scale; 1im * scale 0]
+    @test_throws ArgumentError periodic_current_operator(
+        unchecked_holstein_config(config; site_count=1),
+    )
+    @test_throws ArgumentError periodic_current_operator(
+        unchecked_holstein_config(config; hopping_cm=-1.0),
+    )
+    @test_throws ArgumentError periodic_current_operator(
+        unchecked_holstein_config(config; hopping_cm=NaN),
+    )
 end
 
 @testset "Holstein current twin-space operators" begin
@@ -126,6 +143,16 @@ end
         config;
         trace_observable,
     )) ≈ tt_full(rho)
+
+    traced_observations = propagate_fixed_steps(
+        rho,
+        (; liouvillian=zero_liouvillian, trace_observable),
+        config,
+        1;
+        observe=(step, time, state) -> (; step, time, state),
+    )
+    @test tt_full(traced_observations.state) ≈ tt_full(rho)
+    @test [observation.step for observation in traced_observations.observations] == [0, 1]
 
     observations = propagate_fixed_steps(
         rho,
