@@ -41,6 +41,8 @@ export PhysicalQuantity,
        tt_sbham,
        # HEOM-TT
        HEOMTTSystem,
+       heom_tt_dimensions,
+       root_density_matrix,
        build_heom_liouvillian,
        build_initial_state
 

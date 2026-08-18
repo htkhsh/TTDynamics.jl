@@ -18,22 +18,50 @@ struct HEOMTTSystem
     H_sys::Matrix{ComplexF64}
     noise::NoiseExp
     nb::Vector{Int}
+
+    function HEOMTTSystem(H_sys::Matrix{ComplexF64}, noise::NoiseExp, nb::Vector{Int})
+        _validate_heom_system(H_sys, noise, nb)
+        new(H_sys, noise, nb)
+    end
 end
 
 # Constructors
+function _validate_heom_system(H_sys::AbstractMatrix, noise::NoiseExp, nb::Vector{Int})
+    size(H_sys, 1) == size(H_sys, 2) && !isempty(H_sys) ||
+        throw(ArgumentError("H_sys must be a nonempty square matrix"))
+    all(isfinite, H_sys) || throw(ArgumentError("H_sys must be finite"))
+    length(nb) == noise.nterms ||
+        throw(ArgumentError("nb length must equal the number of bath terms"))
+    all(>(0), nb) || throw(ArgumentError("all hierarchy sizes must be positive"))
+    for (index, coupling) in pairs(noise.V)
+        size(coupling) == size(H_sys) ||
+            throw(ArgumentError("bath coupling $index must match H_sys dimensions"))
+        all(isfinite, coupling) ||
+            throw(ArgumentError("bath coupling $index must be finite"))
+    end
+    return nothing
+end
+
 function HEOMTTSystem(H_sys::AbstractMatrix, noise::NoiseExp, nb::Vector{Int})
-    @assert length(nb) == noise.nterms "nb must have length equal to number of BCF terms"
-    return HEOMTTSystem(ComplexF64.(H_sys), noise, nb)
+    return HEOMTTSystem(ComplexF64.(H_sys), noise, Int.(nb))
 end
 
 # Convenience constructor: uniform nb for all modes
 function HEOMTTSystem(H_sys::AbstractMatrix, noise::NoiseExp, nb::Int)
-    return HEOMTTSystem(ComplexF64.(H_sys), noise, fill(nb, noise.nterms))
+    return HEOMTTSystem(H_sys, noise, fill(nb, noise.nterms))
 end
 
 # Accessor functions
 nsys(sys::HEOMTTSystem) = size(sys.H_sys, 1)
 n_bcf(sys::HEOMTTSystem) = sys.noise.nterms
+
+"""    heom_tt_dimensions(system) -> Vector{Int}
+
+Return the canonical twin-space HEOM mode dimensions
+`[ket, bra, hierarchy...]`.
+"""
+heom_tt_dimensions(system::HEOMTTSystem) =
+    [nsys(system), nsys(system), system.nb...]
 
 """Decay rates (HEOM convention: positive real part, C(t) = Σ c exp(-γt))"""
 γ(sys::HEOMTTSystem) = ComplexF64.(sys.noise.γ)
@@ -43,6 +71,108 @@ c1(sys::HEOMTTSystem) = ComplexF64.(sys.noise.c1)
 
 """c2 coefficients from NoiseExp"""
 c2(sys::HEOMTTSystem) = ComplexF64.(sys.noise.c2)
+
+function _local_product_tensor(vectors::AbstractVector{<:AbstractVector})
+    isempty(vectors) && throw(ArgumentError("at least one local vector is required"))
+    all(vector -> !isempty(vector), vectors) ||
+        throw(ArgumentError("local vectors must be nonempty"))
+    all(vector -> all(isfinite, vector), vectors) ||
+        throw(ArgumentError("local vectors must be finite"))
+    cores = [reshape(ComplexF64.(vector), 1, length(vector), 1) for vector in vectors]
+    return TTTensor(cores)
+end
+
+function _local_product_matrix(matrices::AbstractVector{<:AbstractMatrix})
+    isempty(matrices) && throw(ArgumentError("at least one local matrix is required"))
+    all(matrix -> !isempty(matrix), matrices) ||
+        throw(ArgumentError("local matrices must be nonempty"))
+    all(matrix -> all(isfinite, matrix), matrices) ||
+        throw(ArgumentError("local matrices must be finite"))
+    cores = [reshape(ComplexF64.(matrix), 1, size(matrix, 1), size(matrix, 2), 1)
+             for matrix in matrices]
+    return TTMatrix(cores)
+end
+
+function _build_twin_initial_state(system::HEOMTTSystem, init_state::Int;
+                                   tol::Float64=1e-12)
+    Ns = nsys(system)
+    1 <= init_state <= Ns ||
+        throw(ArgumentError("initial state must be in 1:$Ns"))
+
+    ket = zeros(ComplexF64, Ns)
+    bra = zeros(ComplexF64, Ns)
+    ket[init_state] = 1
+    bra[init_state] = 1
+    vacuum = [ComplexF64[1; zeros(ComplexF64, n - 1)] for n in system.nb]
+
+    return tt_round(_local_product_tensor([ket, bra, vacuum...]), tol)
+end
+
+function _validate_heom_state(state::TTTensor, system::HEOMTTSystem)
+    expected = heom_tt_dimensions(system)
+    actual = tt_dims(state)
+    actual == expected && return nothing
+
+    old_layout = [nsys(system)^2, system.nb...]
+    actual == old_layout && throw(ArgumentError(
+        "old vectorized HEOM state is unsupported; regenerate it in twin-space format",
+    ))
+    throw(ArgumentError("HEOM state dimensions must be $expected; got $actual"))
+end
+
+"""    root_density_matrix(state, system) -> Matrix{ComplexF64}
+
+Extract the root auxiliary density operator by fixing every hierarchy index to
+its vacuum state, without expanding the hierarchy tensor.
+"""
+function root_density_matrix(state::TTTensor, system::HEOMTTSystem)::Matrix{ComplexF64}
+    _validate_heom_state(state, system)
+    cores = state.cores
+
+    hierarchy_environment = ones(ComplexF64, 1)
+    for core in Iterators.reverse(cores[3:end])
+        hierarchy_environment = ComplexF64.(core[:, 1, :]) * hierarchy_environment
+    end
+
+    Ns = nsys(system)
+    density = zeros(ComplexF64, Ns, Ns)
+    ket_core = cores[1]
+    bra_core = cores[2]
+    for ket in 1:Ns, bra in 1:Ns
+        density[ket, bra] = (
+            reshape(ComplexF64.(ket_core[1, ket, :]), 1, :) *
+            ComplexF64.(bra_core[:, bra, :]) * hierarchy_environment
+        )[1]
+    end
+    return density
+end
+
+function _twin_trace_observable(system::HEOMTTSystem; tol::Float64=1e-12)
+    Ns = nsys(system)
+    ket_core = zeros(ComplexF64, 1, Ns, Ns)
+    bra_core = zeros(ComplexF64, Ns, Ns, 1)
+    for index in 1:Ns
+        ket_core[1, index, index] = 1
+        bra_core[index, index, 1] = 1
+    end
+    vacuum = [ComplexF64[1; zeros(ComplexF64, n - 1)] for n in system.nb]
+    cores = [ket_core, bra_core,
+             [reshape(vector, 1, length(vector), 1) for vector in vacuum]...]
+    return tt_round(TTTensor(cores), tol)
+end
+
+function _twin_population_observable(system::HEOMTTSystem, site::Int;
+                                     tol::Float64=1e-12)
+    Ns = nsys(system)
+    1 <= site <= Ns || throw(ArgumentError("population site must be in 1:$Ns"))
+
+    ket = zeros(ComplexF64, Ns)
+    bra = zeros(ComplexF64, Ns)
+    ket[site] = 1
+    bra[site] = 1
+    vacuum = [ComplexF64[1; zeros(ComplexF64, n - 1)] for n in system.nb]
+    return tt_round(_local_product_tensor([ket, bra, vacuum...]), tol)
+end
 
 """    build_heom_liouvillian(params; tol=1e-10) → (XOP, Ix, Pop)"""
 function build_heom_liouvillian(sys::HEOMTTSystem; tol::Float64=1e-12)
