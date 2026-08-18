@@ -121,18 +121,22 @@ function _read_tt(io::IO)
             _format_error("invalid TT binary scalar code")
         T = _TT_CODE_TYPES[scalar_code]
 
-        core_count = _read_le(io, UInt32)
-        iszero(core_count) && _format_error("core count must be positive")
+        raw_core_count = _read_le(io, UInt32)
+        iszero(raw_core_count) && _format_error("core count must be positive")
+        UInt64(raw_core_count) > UInt64(typemax(Int)) &&
+            _format_error("core count is larger than typemax(Int)")
+        core_count = Int(raw_core_count)
         ndims = _core_ndims(kind)
-        cores = [
-            _read_core(io, T,
-                       _checked_dimensions(ntuple(_ -> _read_le(io, UInt64), ndims), index))
-            for index in 1:Int(core_count)
-        ]
-        rank_dimension = kind == _TT_TENSOR_KIND ? 3 : 4
-        for index in 2:length(cores)
-            size(cores[index - 1], rank_dimension) == size(cores[index], 1) ||
+        cores = Vector{Array{T,ndims}}()
+        sizehint!(cores, min(core_count, 16))
+        previous_right_rank = 0
+        for index in 1:core_count
+            dimensions = _checked_dimensions(
+                ntuple(_ -> _read_le(io, UInt64), ndims), index)
+            index > 1 && previous_right_rank != dimensions[1] &&
                 _format_error("invalid TT ranks: core $index has a mismatched left rank")
+            push!(cores, _read_core(io, T, dimensions))
+            previous_right_rank = dimensions[end]
         end
 
         tt = try
@@ -187,8 +191,12 @@ function save_tt_binary(path::AbstractString,
         if !overwrite && ispath(target)
             throw(ArgumentError("target already exists: $target"))
         end
-        mv(temporary_path, target; force=overwrite)
-        temporary_path = nothing
+        if overwrite
+            Base.Filesystem.rename(temporary_path, target)
+            temporary_path = nothing
+        else
+            Base.Filesystem.hardlink(temporary_path, target)
+        end
         target
     finally
         temporary_path === nothing || rm(temporary_path; force=true)

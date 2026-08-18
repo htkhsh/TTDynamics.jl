@@ -72,6 +72,14 @@ using Test
             @test read(path) == original
             @test save_tt_binary(path, tt; overwrite=true) == path
             @test load_tt_binary(path).cores == tt.cores
+
+            directory_target = joinpath(directory, "directory.ttbin")
+            mkdir(directory_target)
+            marker = joinpath(directory_target, "marker")
+            write(marker, "preserve")
+            @test_throws Base.IOError save_tt_binary(directory_target, tt; overwrite=true)
+            @test isdir(directory_target)
+            @test read(marker, String) == "preserve"
         end
     end
 
@@ -104,10 +112,20 @@ using Test
             save_tt_binary(valid_path, tt)
             valid = read(valid_path)
 
-            function rejected(name, bytes)
+            function rejection(name, bytes)
                 path = joinpath(directory, name)
                 write(path, bytes)
-                @test_throws ArgumentError load_tt_binary(path)
+                try
+                    load_tt_binary(path)
+                catch error
+                    @test error isa ArgumentError
+                    return error
+                end
+                @test false
+            end
+
+            function rejected(name, bytes)
+                rejection(name, bytes)
             end
 
             bad_magic = copy(valid); bad_magic[1] = 0xff
@@ -137,6 +155,12 @@ using Test
             append_tensor_core!(rank_mismatch, (1, 2, 2), 4)
             append_tensor_core!(rank_mismatch, (3, 2, 1), 6)
             rejected("rank-mismatch.ttbin", rank_mismatch)
+
+            early_rank_mismatch = tensor_file_bytes(2)
+            append_tensor_core!(early_rank_mismatch, (1, 2, 2), 4)
+            append_tensor_core!(early_rank_mismatch, (3, 2, 1), 0)
+            error = rejection("rank-mismatch-before-data.ttbin", early_rank_mismatch)
+            @test occursin("invalid TT ranks", sprint(showerror, error))
         end
     end
 
