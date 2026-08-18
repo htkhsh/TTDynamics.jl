@@ -8,10 +8,13 @@ using KaisouEOM
 end
 
 include("tt_io.jl")
+include("holstein_current_correlation.jl")
 include("heom_twin_space.jl")
 
 include("../examples/tfd/ksl/utils.jl")
-include("../examples/holstein/utils.jl")
+if !isdefined(@__MODULE__, :HolsteinConfig)
+    include("../examples/holstein/utils.jl")
+end
 
 @testset "Periodic Holstein model utilities" begin
     H = periodic_holstein_hamiltonian(zeros(5), 400.0)
