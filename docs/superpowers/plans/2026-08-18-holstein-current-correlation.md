@@ -1,14 +1,10 @@
-# Holstein Current Correlation Implementation Plan
-
-> **Superseded — do not execute:** The user selected a repository-wide HEOM-TT
-> twin-space migration after this plan was written. A replacement current-
-> correlation plan will be written after the twin-space migration is complete.
+# Holstein Twin-Space Current Correlation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add separate executables that save a fixed-1000-fs equilibrated periodic Holstein HEOM-TT state and reload it to calculate the unsymmetrized current correlation for 0:1:200 fs.
 
-**Architecture:** `examples/holstein_current_correlation/` contains two guarded executables plus focused shared utilities. It includes the existing Brownian Holstein example to reuse `HolsteinConfig`, QFiND TPSD decomposition, and HEOM construction, while its own helpers own state-returning propagation, current operators, metadata validation, and output formatting.
+**Architecture:** `examples/holstein_current_correlation/` contains two guarded executables plus focused shared utilities. It includes the existing Brownian Holstein example to reuse `HolsteinConfig`, QFiND TPSD decomposition, and HEOM construction, while its own helpers own state-returning propagation, exact factorized twin-space current operators, metadata validation, and output formatting.
 
 **Tech Stack:** Julia 1.11+, TTDynamics/TTSolver, KaisouEOM, QFiND TPSD, TOML stdlib, CairoMakie, `Test`; TTDynamics versioned TT binary I/O.
 
@@ -18,8 +14,10 @@
 - Production current correlation is the unsymmetrized `C_JJ(t) = Tr[J exp(Lt)(J rho_eq)]` on `0.0:1.0:200.0` fs.
 - `J = im * hopping_cm * icm2ifs * sum(|n+1><n| - |n><n+1|)` includes the closing bond once for `N > 2`; `N = 2` has one bond, matching `periodic_holstein_hamiltonian`.
 - Unit lattice spacing and charge are assumed, so current is in `fs^-1` and correlation in `fs^-2`.
-- Left current action uses `kron(J, I)` on the system density core and identity on all hierarchy cores.
-- The current observable uses `vec(J)` on the system core and hierarchy vacuum vectors, measuring only the root ADO.
+- Canonical HEOM-TT dimensions are `[ket(N), bra(N), hierarchy...]`; old `[N^2, hierarchy...]` states are rejected.
+- Left current action uses `J` on the ket core and identities on the bra and hierarchy cores; no dense `N^2 x N^2` superoperator is formed.
+- The current observable uses ket and bra cores connected by exact bond rank `N`, plus hierarchy vacuum vectors, and measures only `Tr(J rho_root)`.
+- Metadata records and validates `heom_representation = "twin-space-v1"`.
 - The complete HEOM state is divided by its finite nonzero root trace before saving.
 - State output is `output/holstein_equilibrium.ttbin`; physical/decomposition identity is stored separately in `output/holstein_equilibrium_metadata.toml`.
 - Correlation output preserves both real and imaginary components in CSV and PNG.
@@ -49,7 +47,7 @@
 **Interfaces:**
 - Consumes: `HolsteinConfig`, a problem named tuple with `system`, `liouvillian`, `trace_observable`, and `population_observables`, plus TTSolver TT operations.
 - Produces: `periodic_current_operator(config)::Matrix{ComplexF64}`.
-- Produces: `build_current_heom_operators(config, problem)::NamedTuple{(:left_action,:observable)}`.
+- Produces: `build_current_heom_operators(config, problem)::NamedTuple{(:current,:left_action,:observable)}`.
 - Produces: `propagate_cn_step(rho::TTTensor, liouvillian::TTMatrix, config)::TTTensor`.
 - Produces: `propagate_fixed_steps(rho, problem, config, step_count; observe)::NamedTuple{(:state,:observations)}`.
 - Produces: `normalize_heom_state(rho, trace_observable; atol=1e-14)::TTTensor`.
@@ -129,34 +127,67 @@ end
 ```
 
 Implement `build_current_heom_operators`. Let `I_sys` be the `N x N`
-identity. Its `left_action` is `tt_mkron(kron(current, I_sys), identity
-matrices for problem.system.nb...)`, rounded with `operator_tolerance`. Its
-`observable` starts from a one-core `TTTensor(reshape(vec(current),1,N^2,1))`
-and appends a local `[1,0,...]` tensor for every hierarchy size using `tkron`,
-then rounds. Validate the resulting input/output TT dimensions against
-`problem.liouvillian`.
+identity and construct the left action directly from factorized local cores:
+
+```julia
+local_matrices = [current, I_sys, hierarchy_identities...]
+left_action = TTMatrix([
+    reshape(ComplexF64.(matrix), 1, size(matrix, 1), size(matrix, 2), 1)
+    for matrix in local_matrices
+])
+left_action = tt_round(left_action, config.operator_tolerance)
+```
+
+Construct the observable with an exact ket-bra bond of rank `N`:
+
+```julia
+ket_core = zeros(ComplexF64, 1, N, N)
+for ket in 1:N
+    ket_core[1, ket, ket] = 1
+end
+bra_core = reshape(current, N, N, 1)
+observable = TTTensor([ket_core, bra_core, vacuum_cores...])
+observable = tt_round(observable, config.operator_tolerance)
+```
+
+Because `tt_dot` conjugates the observable and `current` is Hermitian, this
+contracts as `sum(conj(current[k,b]) * rho[k,b]) = Tr(current * rho)`.
+Validate `tt_dims(left_action)` against both sides of `problem.liouvillian`,
+validate `tt_dims(observable) == heom_tt_dimensions(problem.system)`, and
+return the dense `current` together with both TT objects.
 
 - [ ] **Step 4: Test TT left action and observable against dense algebra**
 
 Build a two-site, one-bath-term-per-site problem with local hierarchy size 2,
-as in the existing HEOM test. Construct a TT state whose system core contains
-`vec(rho)` and whose two hierarchy cores contain nontrivial vectors. Assert:
+as in the existing HEOM test. Construct a twin-space TT state whose first two
+cores encode a nonsymmetric complex `rho` and whose hierarchy cores contain
+nontrivial vectors. Assert:
 
 ```julia
+ket_core = reshape(Matrix{ComplexF64}(I, 2, 2), 1, 2, 2)
+bra_core = reshape(rho, 2, 2, 1)
+state = TTTensor([
+    ket_core,
+    bra_core,
+    reshape(h1, 1, 2, 1),
+    reshape(h2, 1, 2, 1),
+])
 source = operators.left_action * state
-expected_system = vec(current * rho)
-@test tt_full(source) ≈ kron(expected_system, kron(h1, h2))
+expected = kron(vec(current * rho), kron(h1, h2))
+@test vec(tt_full(source)) ≈ expected
 
-root_state = tt_kron(
-    TTTensor([reshape(vec(rho), 1, 4, 1)]),
-    TTTensor([reshape(ComplexF64[1, 0], 1, 2, 1)]),
-    TTTensor([reshape(ComplexF64[1, 0], 1, 2, 1)]),
-)
+root_state = TTTensor([
+    ket_core,
+    bra_core,
+    reshape(ComplexF64[1, 0], 1, 2, 1),
+    reshape(ComplexF64[1, 0], 1, 2, 1),
+])
 @test tt_dot(operators.observable, root_state) ≈ tr(current * rho)
 ```
 
-Use the actual available multi-argument operation (`tkron` or repeated
-`tkron`) confirmed from TTSolver; do not invent `tt_kron` arity.
+Add a state with a zero root-vacuum entry and nonzero auxiliary entries and
+assert the observable returns zero. These fixtures distinguish ket action from
+bra action, transpose, and conjugation mistakes.
 
 - [ ] **Step 5: Implement and test propagation plus normalization**
 
@@ -177,10 +208,22 @@ existing executable's `measure_state`; it returns real site populations, real
 root trace, maximum rank, and mean rank. This keeps root tests independent of
 QFiND and CairoMakie.
 
-Test propagation with a one-core zero `TTMatrix` Liouvillian and a minimal
-config for one step; the returned dense state must equal the input. Test that
-the callback records steps `[0,1]`. Test normalization on a scaled HEOM initial
-state and reject a zero TT state.
+Test propagation with a two-core twin-space state and zero Liouvillian:
+
+```julia
+rho = TTTensor([
+    reshape(Matrix{ComplexF64}(I, 2, 2), 1, 2, 2),
+    reshape(ComplexF64[1 2im; -3im 4], 2, 2, 1),
+])
+zero_liouvillian = TTMatrix([
+    zeros(ComplexF64, 1, 2, 2, 1),
+    reshape(Matrix{ComplexF64}(I, 2, 2), 1, 2, 2, 1),
+])
+```
+
+For one step, the returned dense state must equal the input. Test that the
+callback records steps `[0,1]`. Test normalization on a scaled twin-space HEOM
+initial state and reject a zero TT state.
 
 - [ ] **Step 6: Run focused and full tests**
 
@@ -215,7 +258,8 @@ git commit -m "feat: add Holstein current TT utilities"
 
 Construct a deterministic fake decomposition with two complex exponents and
 coefficients, a small `HEOMTTSystem`, and its initial state. Assert metadata
-contains identifier `"TTDynamics.HolsteinEquilibrium"`, version `1`, all
+contains identifier `"TTDynamics.HolsteinEquilibrium"`, version `1`,
+`heom_representation = "twin-space-v1"`, all
 physical fields, parallel real/imaginary decomposition arrays, hierarchy
 sizes, and `tt_dims(state)`. In `mktempdir`, write/read metadata and compare
 the dictionaries. Assert a second default write throws and `overwrite=true`
@@ -252,17 +296,23 @@ the Julia 1.11-safe semantics of `save_tt_binary`; do not call destructive
 
 - [ ] **Step 4: Implement exact compatibility validation**
 
-Validate identifier/version, finite numeric arrays, equal real/imaginary array
-lengths, reconstructed complex decomposition, every physical/config field,
-`problem.system.nb`, and `tt_dims(state)`. First reject non-`TTTensor` objects.
+Validate identifier/version/HEOM representation, finite numeric arrays, equal
+real/imaginary array lengths, reconstructed complex decomposition, every
+physical/config field, `problem.system.nb`, `heom_tt_dimensions(problem.system)`,
+and `tt_dims(state)`. First reject non-`TTTensor` objects, then call
+`root_density_matrix(state, problem.system)` as the public semantic validation
+boundary so old `[N^2, hierarchy...]` checkpoints receive the repository's
+migration error and nonfinite reconstructed roots are rejected.
 For floats and complex arrays use `isapprox(...; rtol, atol)` and include the
 field name in each `ArgumentError`. For integers, strings, vectors of integers,
 and dimensions use exact equality.
 
-Add tests that independently alter `hopping_cm`, one exponent imaginary part,
-one hierarchy size, and one TT dimension. Each must throw `ArgumentError` whose
-message contains the changed field. Add missing file, unsupported identifier,
-unsupported version, and nonfinite metadata cases.
+Add tests that independently alter `heom_representation`, `hopping_cm`, one
+exponent imaginary part, one hierarchy size, and one TT dimension. Add a
+synthetic `[N^2, hierarchy...]` state and verify its error contains
+`"old vectorized HEOM state is unsupported"`. Each changed metadata field must
+throw `ArgumentError` whose message contains its name. Add missing file,
+unsupported identifier, unsupported version, and nonfinite metadata cases.
 
 - [ ] **Step 5: Test binary save/load together with metadata validation**
 
@@ -377,7 +427,7 @@ git commit -m "feat: save equilibrated Holstein TT state"
 
 - [ ] **Step 1: Add failing zero-time and CSV tests**
 
-For a small HEOM root state, build current operators and call
+For a small twin-space HEOM root state, build current operators and call
 `run_current_correlation(...; correlation_time_fs=0.0)`. Assert one time point
 at zero and:
 
