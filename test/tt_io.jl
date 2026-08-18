@@ -46,6 +46,19 @@ using Test
         end
     end
 
+    @testset "version 1 complex scalar bytes" begin
+        mktempdir() do directory
+            path = joinpath(directory, "complex-scalar.ttbin")
+            tt = TTTensor([reshape(ComplexF32[1.5f0-2.25f0im], 1, 1, 1)])
+            save_tt_binary(path, tt)
+
+            bytes = read(path)
+            @test bytes[41:44] == reinterpret(UInt8, [htol(reinterpret(UInt32, 1.5f0))])
+            @test bytes[45:48] == reinterpret(UInt8, [htol(reinterpret(UInt32, -2.25f0))])
+            @test load_tt_binary(path) isa TTTensor{ComplexF32}
+        end
+    end
+
     @testset "one object per file" begin
         mktempdir() do directory
             first_path = joinpath(directory, "first.ttbin")

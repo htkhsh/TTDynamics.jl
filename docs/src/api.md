@@ -238,6 +238,32 @@ estimate_basis_sizes(freqs, couplings; threshold=0.999, nb_min=10, nb_max=30) â†
 ```
 Estimate basis sizes for multiple modes.
 
+### TT Binary I/O (tt_io.jl)
+
+```julia
+save_tt_binary(path, tt; overwrite=false) -> String
+load_tt_binary(path) -> Union{TTTensor, TTMatrix}
+```
+
+`save_tt_binary` writes a tensor-train tensor or matrix in the versioned
+TTDynamics binary format. It supports `Float32`, `Float64`, `ComplexF32`, and
+`ComplexF64` core values. Existing targets are refused by default; set
+`overwrite=true` to replace an existing file. By default, saving atomically
+publishes only a completed sibling temporary file when the destination does not
+exist, so a newly created destination is never left with a partially written
+payload. With `overwrite=true`, replacement follows filesystem rename semantics
+and never recursively removes a directory destination.
+
+`load_tt_binary` automatically detects whether a file contains a tensor or a
+matrix. It rejects unknown format versions, malformed files, and files with
+trailing content.
+
+Version 1 stores fields in this order: the 8-byte magic `TTDYNBIN`, little-endian
+`UInt16(1)` version, object `UInt8`, scalar `UInt8`, little-endian `UInt32` core
+count, then each core's little-endian `UInt64` dimensions followed by its
+column-major values. Complex values interleave real and imaginary components.
+The format does not use Julia `Serialization`.
+
 ---
 
 ## Reference
