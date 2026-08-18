@@ -502,3 +502,114 @@ function measure_heom_state(rho::TTTensor, trace_observable::TTTensor,
         mean_rank=mean(ranks),
     )
 end
+
+function _equilibration_step_count(config::HolsteinConfig,
+                                   equilibration_time_fs::Real)::Int
+    isfinite(equilibration_time_fs) && equilibration_time_fs > 0 ||
+        throw(ArgumentError("equilibration_time_fs must be finite and positive"))
+    ratio = equilibration_time_fs / config.time_step_fs
+    step_count = round(Int, ratio)
+    isapprox(ratio, step_count; rtol=0, atol=eps(Float64) * max(1, abs(ratio))) ||
+        throw(ArgumentError("equilibration_time_fs must be an integral multiple of time_step_fs"))
+    return step_count
+end
+
+"""
+    run_equilibration(config, problem; initial_state=nothing,
+                      equilibration_time_fs=1000.0) -> NamedTuple
+
+Propagate a localized Holstein HEOM state for an exact number of time steps,
+recording root-space diagnostics and returning a trace-normalized final state.
+"""
+function run_equilibration(config::HolsteinConfig, problem;
+                           initial_state=nothing,
+                           equilibration_time_fs::Real=1000.0)::NamedTuple
+    validate_config(config)
+    step_count = _equilibration_step_count(config, equilibration_time_fs)
+    state = isnothing(initial_state) ? build_initial_state(
+        problem.system,
+        config.initial_site;
+        tol=config.operator_tolerance,
+    ) : initial_state
+    state isa TTTensor || throw(ArgumentError("initial_state must be a TTTensor"))
+
+    propagated = propagate_fixed_steps(
+        state,
+        problem,
+        config,
+        step_count;
+        observe=(step, time, rho) -> measure_heom_state(
+            rho,
+            problem.trace_observable,
+            problem.population_observables,
+        ),
+    )
+    observations = propagated.observations
+    save_count = length(observations)
+    times = collect(0:step_count) .* config.time_step_fs
+    populations = hcat([observation.populations for observation in observations]...)
+    trace_values = [observation.trace for observation in observations]
+    maximum_rank = [observation.maximum_rank for observation in observations]
+    mean_rank = [observation.mean_rank for observation in observations]
+    length(times) == save_count || error("equilibration observation count is inconsistent")
+
+    return (;
+        times,
+        populations,
+        trace=trace_values,
+        maximum_rank,
+        mean_rank,
+        state=normalize_heom_state(propagated.state, problem.trace_observable),
+    )
+end
+
+"""
+    write_equilibration_csv(path, result) -> String
+
+Write fixed-time equilibration population, trace, and TT-rank diagnostics
+using the population CSV schema of the Holstein example.
+"""
+function write_equilibration_csv(path::AbstractString, result;
+                                 overwrite::Bool=false)::String
+    target = String(path)
+    !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
+    site_count = size(result.populations, 1)
+    header = join(
+        [
+            "time_fs",
+            ["population_site_$site" for site in 1:site_count]...,
+            "trace",
+            "max_rank",
+            "mean_rank",
+        ],
+        ",",
+    )
+    temporary_path = nothing
+    try
+        temporary_path, io = mktemp(dirname(abspath(target)))
+        try
+            println(io, header)
+            for time_index in eachindex(result.times)
+                println(io, join(Any[
+                    result.times[time_index],
+                    result.populations[:, time_index]...,
+                    result.trace[time_index],
+                    result.maximum_rank[time_index],
+                    result.mean_rank[time_index],
+                ], ","))
+            end
+        finally
+            close(io)
+        end
+        !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
+        if overwrite
+            _equilibrium_atomic_rename(temporary_path, target)
+            temporary_path = nothing
+        else
+            Base.Filesystem.hardlink(temporary_path, target)
+        end
+        return target
+    finally
+        temporary_path === nothing || rm(temporary_path; force=true)
+    end
+end

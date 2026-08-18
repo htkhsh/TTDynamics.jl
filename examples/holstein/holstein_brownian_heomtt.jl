@@ -7,7 +7,9 @@ using KaisouEOM
 using KaisouEOM: icm2ifs
 using CairoMakie
 
-include("utils.jl")
+if !isdefined(@__MODULE__, :HolsteinConfig)
+    include("utils.jl")
+end
 
 # IMPORTANT: Before using these numerical defaults for production, converge the
 # Padé order, TPSD tolerance, hierarchy local size, time step, and TT tolerances.

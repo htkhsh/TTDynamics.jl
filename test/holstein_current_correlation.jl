@@ -9,6 +9,7 @@ if !isdefined(@__MODULE__, :HolsteinConfig)
     include("../examples/holstein/utils.jl")
 end
 include("../examples/holstein_current_correlation/utils.jl")
+include("../examples/holstein_current_correlation/equilibrate.jl")
 
 function current_correlation_problem(config)
     H = periodic_holstein_hamiltonian(config.site_energies_cm, config.hopping_cm) *
@@ -64,6 +65,37 @@ function metadata_fixture()
         equilibration_time_fs=1000.0,
     )
     return (; config, decomposition, problem, state, metadata)
+end
+
+function equilibration_fixture()
+    config = HolsteinConfig(
+        site_count=2,
+        site_energies_cm=zeros(2),
+        hopping_cm=2.0,
+        final_time_fs=1.0,
+        time_step_fs=1.0,
+        hierarchy_local_size=2,
+        operator_tolerance=1e-14,
+        state_rounding_tolerance=1e-14,
+        tamen_tolerance=1e-12,
+    )
+    full_problem = current_correlation_problem(config)
+    state = build_initial_state(full_problem.system, config.initial_site; tol=1e-14)
+    zero_liouvillian = TTMatrix([
+        zeros(ComplexF64, 1, dimension, dimension, 1)
+        for dimension in tt_dims(state)
+    ])
+    problem = (
+        system=full_problem.system,
+        liouvillian=zero_liouvillian,
+        trace_observable=full_problem.trace_observable,
+        population_observables=full_problem.population_observables,
+    )
+    decomposition = (
+        exponents=ComplexF64[0.1 + 0.2im],
+        coefficients=ComplexF64[0.5 - 0.6im],
+    )
+    return (; config, decomposition, problem, state)
 end
 
 @testset "Holstein current correlation utilities" begin
@@ -336,4 +368,81 @@ end
     @test measurement.trace ≈ 1.0
     @test measurement.maximum_rank >= 1
     @test measurement.mean_rank >= 1
+end
+
+@testset "Holstein fixed-time equilibration" begin
+    fixture = equilibration_fixture()
+    (; config, decomposition, problem, state) = fixture
+
+    @test DEFAULT_CONFIG isa HolsteinConfig
+    result = run_equilibration(
+        config,
+        problem;
+        initial_state=state,
+        equilibration_time_fs=config.time_step_fs,
+    )
+    @test result.times == [0.0, 1.0]
+    @test size(result.populations) == (config.site_count, 2)
+    @test length(result.trace) == length(result.times)
+    @test length(result.maximum_rank) == length(result.times)
+    @test length(result.mean_rank) == length(result.times)
+    @test result.state isa TTTensor
+    @test tt_dot(problem.trace_observable, result.state) ≈ 1
+    @test_throws ArgumentError run_equilibration(
+        config,
+        problem;
+        initial_state=state,
+        equilibration_time_fs=1.5,
+    )
+    @test_throws ArgumentError run_equilibration(
+        config,
+        problem;
+        initial_state=state,
+        equilibration_time_fs=0.0,
+    )
+
+    mktempdir() do directory
+        outputs = save_equilibration_outputs(
+            config,
+            decomposition,
+            problem,
+            result;
+            output_directory=directory,
+            equilibration_time_fs=config.time_step_fs,
+        )
+        @test isfile(outputs.state_path)
+        @test isfile(outputs.metadata_path)
+        @test isfile(outputs.csv_path)
+        @test_throws ArgumentError write_equilibration_csv(outputs.csv_path, result)
+        restored = load_tt_binary(outputs.state_path)
+        @test validate_equilibrium_state(
+            restored,
+            read_equilibrium_metadata(outputs.metadata_path),
+            config,
+            decomposition,
+            problem,
+        ).cores == result.state.cores
+        @test_throws ArgumentError save_equilibration_outputs(
+            config,
+            decomposition,
+            problem,
+            result;
+            output_directory=directory,
+            equilibration_time_fs=config.time_step_fs,
+        )
+    end
+
+    mktempdir() do directory
+        main_result = equilibrate_main(
+            config;
+            equilibration_time_fs=config.time_step_fs,
+            output_directory=directory,
+            decomposition_builder=_ -> decomposition,
+            problem_builder=(_, _) -> problem,
+            equilibration_runner=(args...; kwargs...) -> result,
+        )
+        @test isfile(main_result.state_path)
+        @test isfile(main_result.metadata_path)
+        @test isfile(main_result.csv_path)
+    end
 end
