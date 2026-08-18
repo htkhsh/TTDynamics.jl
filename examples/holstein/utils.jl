@@ -56,9 +56,11 @@ struct HolsteinConfig
     initial_site::Int
     final_time_fs::Float64
     time_step_fs::Float64
-    bcf_final_time_fs::Float64
-    bcf_sample_count::Int
-    bcf_fit_tolerance::Float64
+    pade_order::Int
+    tpsd_tolerance::Float64
+    pade_type::Symbol
+    validation_final_time_fs::Float64
+    validation_sample_count::Int
     bcf_upper_bound_cm::Float64
     hierarchy_local_size::Int
     temporal_basis_size::Int
@@ -82,9 +84,11 @@ function HolsteinConfig(;
     initial_site=1,
     final_time_fs=100.0,
     time_step_fs=1.0,
-    bcf_final_time_fs=100.0,
-    bcf_sample_count=400,
-    bcf_fit_tolerance=1e-6,
+    pade_order=8,
+    tpsd_tolerance=5e-2,
+    pade_type=:Nm1,
+    validation_final_time_fs=100.0,
+    validation_sample_count=400,
     bcf_upper_bound_cm=10_000.0,
     hierarchy_local_size=4,
     temporal_basis_size=3,
@@ -101,8 +105,9 @@ function HolsteinConfig(;
         Float64(brownian_frequency_cm), Float64(brownian_damping_cm),
         Float64(reorganization_energy_cm), Float64(temperature_K),
         Int(initial_site), Float64(final_time_fs), Float64(time_step_fs),
-        Float64(bcf_final_time_fs), Int(bcf_sample_count),
-        Float64(bcf_fit_tolerance), Float64(bcf_upper_bound_cm),
+        Int(pade_order), Float64(tpsd_tolerance), Symbol(pade_type),
+        Float64(validation_final_time_fs), Int(validation_sample_count),
+        Float64(bcf_upper_bound_cm),
         Int(hierarchy_local_size), Int(temporal_basis_size),
         Float64(tamen_tolerance), Float64(operator_tolerance),
         Float64(state_rounding_tolerance), Int(sweep_count),
@@ -133,8 +138,8 @@ function validate_config(config::HolsteinConfig)
         config.temperature_K,
         config.final_time_fs,
         config.time_step_fs,
-        config.bcf_final_time_fs,
-        config.bcf_fit_tolerance,
+        config.tpsd_tolerance,
+        config.validation_final_time_fs,
         config.bcf_upper_bound_cm,
         config.tamen_tolerance,
         config.operator_tolerance,
@@ -150,16 +155,20 @@ function validate_config(config::HolsteinConfig)
         config.temperature_K,
         config.final_time_fs,
         config.time_step_fs,
-        config.bcf_final_time_fs,
-        config.bcf_fit_tolerance,
+        config.tpsd_tolerance,
+        config.validation_final_time_fs,
         config.bcf_upper_bound_cm,
         config.tamen_tolerance,
         config.operator_tolerance,
         config.state_rounding_tolerance,
     )) || throw(ArgumentError("physical and numerical scales must be positive"))
 
-    config.bcf_sample_count >= 2 ||
-        throw(ArgumentError("bcf_sample_count must be at least two"))
+    config.pade_order > 0 ||
+        throw(ArgumentError("pade_order must be positive"))
+    config.pade_type in (:N, :Nm1) ||
+        throw(ArgumentError("pade_type must be :N or :Nm1"))
+    config.validation_sample_count >= 2 ||
+        throw(ArgumentError("validation_sample_count must be at least two"))
     all(>(0), (
         config.hierarchy_local_size,
         config.sweep_count,

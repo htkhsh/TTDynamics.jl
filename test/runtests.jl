@@ -34,6 +34,11 @@ include("../examples/holstein/utils.jl")
     @test config.brownian_damping_cm == 200.0
     @test config.temperature_K == 300.0
     @test config.temporal_basis_size == 3
+    @test config.pade_order == 8
+    @test config.tpsd_tolerance == 5e-2
+    @test config.pade_type == :Nm1
+    @test config.validation_final_time_fs == 100.0
+    @test config.validation_sample_count == 400
     @test_throws ArgumentError HolsteinConfig(site_count=1)
     @test_throws ArgumentError HolsteinConfig(initial_site=6)
     @test_throws ArgumentError HolsteinConfig(time_step_fs=3.0, final_time_fs=100.0)
@@ -41,6 +46,10 @@ include("../examples/holstein/utils.jl")
     @test_throws ArgumentError HolsteinConfig(temporal_basis_size=1)
     @test_throws ArgumentError HolsteinConfig(temporal_basis_size=2)
     @test_throws ArgumentError HolsteinConfig(temporal_basis_size=4)
+    @test_throws ArgumentError HolsteinConfig(pade_order=0)
+    @test_throws ArgumentError HolsteinConfig(tpsd_tolerance=0.0)
+    @test_throws ArgumentError HolsteinConfig(pade_type=:invalid)
+    @test_throws ArgumentError HolsteinConfig(validation_sample_count=1)
 end
 
 @testset "KSL example utilities" begin
