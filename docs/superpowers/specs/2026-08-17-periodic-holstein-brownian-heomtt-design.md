@@ -61,24 +61,44 @@ with:
 Hamiltonian quantities are converted from inverse centimeters to inverse
 femtoseconds before propagation.
 
-## Bath-Correlation Expansion
+## Bath-Correlation Decomposition
 
-The example constructs `QFiND.BrownianSD(Omega, Gamma_Q, lambda)` and its finite
-temperature `BosonicBCF`. Here `Gamma_Q` is QFiND's full Brownian damping
-parameter, so the Brownian poles decay at `Gamma_Q / 2`. The correlation
-function is sampled on a documented time grid and fitted to an exponential sum
-with `ExpFit.esprit`.
+The example constructs `QFiND.BrownianSD(Omega, Gamma_Q, lambda)`. Here
+`Gamma_Q` is QFiND's full Brownian damping parameter, so the Brownian poles
+decay at `Gamma_Q / 2`. QFiND's truncated Padé spectral decomposition produces
+the HEOM exponential parameters directly:
 
-The fit quality is reported as a relative 2-norm error. The fitted exponential
-parameters are reused for every site, while each `BathExp` receives its own
-site projector. `NoiseExp` combines these independent baths into the input
-accepted by `HEOMTTSystem`.
+```julia
+exponents, coefficients = tpsd(
+    spectral_density,
+    temperature_K,
+    8,
+    5e-2;
+    pade_type=:Nm1,
+)
+```
+
+The default Padé order is 8, balanced-truncation tolerance is `5e-2`, and Padé
+variant is `:Nm1`. QFiND returns decay rates in `fs^-1` and coefficients in
+`fs^-2`, matching `BathExp`; the example performs no additional conversion.
+The returned parameters are reused for every site, while each `BathExp`
+receives its own site projector. `NoiseExp` combines these independent baths
+into the input accepted by `HEOMTTSystem`.
+
+TPSD does not fit sampled time-domain data. For diagnostics only, the example
+evaluates the numerical `BosonicBCF` and the TPSD exponential sum on a short
+documented validation grid and reports their relative 2-norm difference. This
+grid does not affect the decomposition.
 
 ## Code Structure
 
-`HolsteinConfig` collects physical parameters, BCF-fitting controls,
+`HolsteinConfig` collects physical parameters, TPSD and validation controls,
 hierarchy truncation, tAMEn controls, output cadence, and final time in one
 place. Its constructor validates all requirements before expensive work starts.
+The TPSD fields are `pade_order = 8`, `tpsd_tolerance = 5e-2`, and
+`pade_type = :Nm1`. The diagnostic grid uses separately named
+`validation_final_time_fs`, `validation_sample_count`, and
+`bcf_upper_bound_cm` fields so it cannot be mistaken for a fitting grid.
 
 The utility file exposes focused helpers:
 
@@ -88,7 +108,7 @@ The utility file exposes focused helpers:
 
 The executable is divided into functions for:
 
-1. fitting the Brownian correlation function;
+1. decomposing the Brownian correlation function with QFiND TPSD;
 2. constructing the multi-bath HEOM-TT problem;
 3. propagating one tAMEn step at a time;
 4. measuring populations, trace, and TT ranks;
@@ -118,14 +138,15 @@ The default example evolves from 0 to 100 fs. Time step, hierarchy local size,
 tAMEn tolerance, sweep count, local iterations, kick rank, and internal time
 grid size remain easy to change in the configuration block. Defaults favor a
 useful first run rather than a convergence claim; the comments explicitly tell
-users to converge hierarchy size, fit tolerance, time step, and TT tolerance
-for production results. The fixed Crank-Nicolson scheme requires the internal
-time grid size to be odd and at least three; its default remains three.
+users to converge hierarchy size, Padé order, TPSD tolerance, time step, and
+TT tolerance for production results. The fixed Crank-Nicolson scheme requires
+the internal time grid size to be odd and at least three; its default remains
+three.
 
 ## Example Environment
 
 The executable uses its own Julia project, which directly declares TTDynamics,
-TTSolver, KaisouEOM, QFiND, ExpFit, CairoMakie, and the imported standard
+TTSolver, KaisouEOM, QFiND, CairoMakie, and the imported standard
 libraries. The README supplies exact URL/revision setup and sibling-checkout
 development commands for the unregistered dependencies. The generated example
 Manifest records those sources locally and remains uncommitted.
@@ -146,8 +167,9 @@ process working directory. The example creates:
 - `holstein_brownian_trace.png`;
 - `holstein_brownian_rank.png`.
 
-Console output summarizes physical parameters, BCF fit quality, hierarchy
-dimensions, initial ranks, periodic progress, trace drift, and output paths.
+Console output summarizes physical parameters, TPSD term count and validation
+error, hierarchy dimensions, initial ranks, periodic progress, trace drift,
+and output paths.
 
 ## Error Handling
 
@@ -157,14 +179,17 @@ Validation rejects:
 - a site-energy vector whose length differs from the site count;
 - an initial site outside `1:N`;
 - nonpositive temperature, Brownian parameters, hierarchy local size, time
-  step, final time, sample count, or solver tolerances;
+  step, final time, validation sample count, Padé order, TPSD tolerance, or
+  solver tolerances;
+- a Padé type other than `:N` or `:Nm1`;
 - a `temporal_basis_size` that is less than three or even, because the fixed
   Crank-Nicolson scheme requires an odd grid with at least three points;
 - a final time that is not an integer multiple of the time step.
 
 The Hamiltonian helper handles `N = 2` without adding the same periodic bond
-twice. The script checks that the BCF fit contains at least one stable
-exponential and that its relative error is finite before building the HEOM.
+twice. The script checks that TPSD contains at least one exponential, all
+decay rates have positive real parts, and all coefficients and the diagnostic
+relative error are finite before building the HEOM.
 
 ## Tests
 
@@ -177,11 +202,14 @@ Lightweight tests verify:
 4. site projectors are Hermitian, mutually orthogonal, and sum to identity;
 5. invalid configurations, including CN time grids of size 1, 2, or 4, fail
    early with `ArgumentError`;
-6. a small synthetic multi-bath `HEOMTTSystem` produces an initial state with
+6. the default TPSD controls are Padé order 8, tolerance `5e-2`, and `:Nm1`,
+   while invalid controls fail early;
+7. a small synthetic multi-bath `HEOMTTSystem` produces an initial state with
    unit trace and the expected localized population.
 
-The full Brownian BCF fit and 100 fs propagation remain an executable example,
-not a CI requirement.
+The QFiND-dependent TPSD decomposition is checked through a guarded example
+environment smoke command. The full 100 fs propagation remains an executable
+example, not a CI requirement.
 
 ## Non-goals
 
