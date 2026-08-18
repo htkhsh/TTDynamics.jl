@@ -3,7 +3,6 @@ using Statistics
 using TTSolver
 using TTDynamics
 using QFiND
-using ExpFit
 using KaisouEOM
 using KaisouEOM: icm2ifs
 using CairoMakie
@@ -11,79 +10,80 @@ using CairoMakie
 include("utils.jl")
 
 # IMPORTANT: Before using these numerical defaults for production, converge the
-# BCF window/tolerance, hierarchy local size, time step, and TT tolerance.
+# Padé order, TPSD tolerance, hierarchy local size, time step, and TT tolerances.
 const DEFAULT_CONFIG = HolsteinConfig()
 
 """
-    fit_brownian_bcf(config)
+    decompose_brownian_bcf(config)
 
-Sample and exponentially fit the finite-temperature Brownian bath correlation
-function described by `config`. Its damping field is passed directly as
-QFiND's `Γ_Q`, whose corresponding pole decay is `Γ_Q / 2`.
+Decompose the finite-temperature Brownian bath correlation function described
+by `config` with QFiND TPSD. Its damping field is passed directly as QFiND's
+`Γ_Q`, whose corresponding pole decay is `Γ_Q / 2`.
 """
-function fit_brownian_bcf(config::HolsteinConfig)
+function decompose_brownian_bcf(config::HolsteinConfig)
     spectral_density = BrownianSD(
         config.brownian_frequency_cm,
         config.brownian_damping_cm,
         config.reorganization_energy_cm,
     )
-    correlation_function = BosonicBCF(
+    exponents, coefficients = tpsd(
+        spectral_density,
+        config.temperature_K,
+        config.pade_order,
+        config.tpsd_tolerance;
+        pade_type=config.pade_type,
+    )
+    exponents = ComplexF64.(exponents)
+    coefficients = ComplexF64.(coefficients)
+    isempty(exponents) && error("Brownian TPSD returned no exponential terms")
+    all(isfinite, exponents) || error("Brownian TPSD returned nonfinite exponents")
+    all(isfinite, coefficients) || error("Brownian TPSD returned nonfinite coefficients")
+    # TPSD and BathExp use C(t) = sum(c[k] * exp(-exponents[k] * t)),
+    # hence a decaying expansion has strictly positive real decay rates.
+    all(>(0), real.(exponents)) ||
+        error("Brownian TPSD returned a nondecaying exponential")
+
+    reference_bcf = BosonicBCF(
         spectral_density,
         config.temperature_K;
         ub=config.bcf_upper_bound_cm,
     )
-
-    sample_times = collect(range(
+    validation_times = collect(range(
         0.0,
-        config.bcf_final_time_fs;
-        length=config.bcf_sample_count,
+        config.validation_final_time_fs;
+        length=config.validation_sample_count,
     ))
-    sample_step = sample_times[2] - sample_times[1]
-    samples = correlation_function.(sample_times)
-    exponential_fit = ExpFit.esprit(
-        samples,
-        sample_step,
-        config.bcf_fit_tolerance,
-    )
-
-    exponents = ComplexF64.(exponential_fit.expon)
-    coefficients = ComplexF64.(exponential_fit.coeff)
-    isempty(exponents) && error("Brownian BCF fit returned no exponential terms")
-    all(isfinite, exponents) || error("Brownian BCF fit returned nonfinite exponents")
-    all(isfinite, coefficients) || error("Brownian BCF fit returned nonfinite coefficients")
-    # ExpFit and BathExp use C(t) = sum(c[k] * exp(-exponents[k] * t)),
-    # hence a decaying expansion has strictly positive real decay rates.
-    all(>(0), real.(exponents)) ||
-        error("Brownian BCF fit returned a nondecaying exponential")
-
-    fitted_samples = exponential_fit.(sample_times)
-    relative_error = norm(fitted_samples - samples) / norm(samples)
-    isfinite(relative_error) || error("Brownian BCF fit error is nonfinite")
+    reference_samples = reference_bcf.(validation_times)
+    tpsd_samples = bcf_approx(validation_times, exponents, coefficients)
+    reference_norm = norm(reference_samples)
+    reference_norm > 0 || error("Brownian BCF validation norm is zero")
+    relative_error = norm(tpsd_samples - reference_samples) / reference_norm
+    isfinite(relative_error) || error("Brownian TPSD validation error is nonfinite")
 
     return (;
         exponents,
         coefficients,
         relative_error,
-        sample_times,
-        samples,
-        fitted_samples,
+        validation_times,
+        reference_samples,
+        tpsd_samples,
     )
 end
 
 """
-    build_holstein_heomtt(config, fit)
+    build_holstein_heomtt(config, decomposition)
 
 Construct the periodic Holstein Hamiltonian and its independent site-local
 Brownian baths in the HEOM-TT representation.
 """
-function build_holstein_heomtt(config::HolsteinConfig, fit)
+function build_holstein_heomtt(config::HolsteinConfig, decomposition)
     H_cm = periodic_holstein_hamiltonian(
         config.site_energies_cm,
         config.hopping_cm,
     )
     H_fs = H_cm * icm2ifs
     baths = [
-        BathExp(fit.exponents, fit.coefficients, projector)
+        BathExp(decomposition.exponents, decomposition.coefficients, projector)
         for projector in site_projectors(config.site_count)
     ]
     noise = NoiseExp(baths)
@@ -96,7 +96,7 @@ function build_holstein_heomtt(config::HolsteinConfig, fit)
         config.initial_site;
         tol=config.operator_tolerance,
     )
-    println("  Fitted terms per site: $(length(fit.exponents))")
+    println("  TPSD terms per site: $(length(decomposition.exponents))")
     println("  Total hierarchy cores: $(length(system.nb))")
     println("  Hierarchy local sizes: $(system.nb)")
     println("  Initial TT ranks: $(tt_ranks(initial_state))")
@@ -324,8 +324,8 @@ end
 """
     main(config=DEFAULT_CONFIG)
 
-Fit the bath, build and propagate the periodic Holstein HEOM-TT model, and
-write its CSV and plot diagnostics beside this script.
+Decompose the bath, build and propagate the periodic Holstein HEOM-TT model,
+and write its CSV and plot diagnostics beside this script.
 """
 function main(config=DEFAULT_CONFIG)
     validate_config(config)
@@ -344,16 +344,17 @@ function main(config=DEFAULT_CONFIG)
         "tAMEn tolerance=$(config.tamen_tolerance)",
     )
     println(
-        "  BCF fit: 0:$(config.bcf_final_time_fs) fs with " *
-        "$(config.bcf_sample_count) samples at tolerance $(config.bcf_fit_tolerance)",
+        "  TPSD: pade order=$(config.pade_order), " *
+        "tolerance=$(config.tpsd_tolerance), type=$(config.pade_type)",
     )
 
-    fit = fit_brownian_bcf(config)
+    decomposition = decompose_brownian_bcf(config)
     println(
-        "  BCF fit: $(length(fit.exponents)) terms, relative error=" *
-        "$(round(fit.relative_error, sigdigits=5))",
+        "  TPSD: $(length(decomposition.exponents)) terms, " *
+        "validation relative error=" *
+        "$(round(decomposition.relative_error, sigdigits=5))",
     )
-    problem = build_holstein_heomtt(config, fit)
+    problem = build_holstein_heomtt(config, decomposition)
     result = run_dynamics(config, problem)
 
     output_directory = @__DIR__

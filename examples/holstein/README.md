@@ -1,12 +1,12 @@
 # Periodic Holstein Brownian HEOM-TT example
 
 Run all commands below from the TTDynamics repository root with Julia 1.11 or
-newer. The example has its own environment so its fitting and plotting packages
-do not become dependencies of the TTDynamics library.
+newer. The example has its own environment so its decomposition and plotting
+packages do not become dependencies of the TTDynamics library.
 
 ## Setup
 
-Add known-compatible revisions of TTDynamics and the four unregistered
+Add known-compatible revisions of TTDynamics and the three unregistered
 dependencies in one transaction, then instantiate the remaining registered
 dependencies. The remote workflow uses `Pkg.add` because Julia's `Pkg.develop`
 does not accept pinned `rev` specifications:
@@ -19,7 +19,6 @@ Pkg.add([
     Pkg.PackageSpec(url="https://github.com/htkhsh/TTSolver.jl.git", rev="7a2eb169648257b9619c14bab349d63798bd220a"),
     Pkg.PackageSpec(url="https://github.com/DOC-Package/KaisouEOM.jl.git", rev="06f7939557bce802ea967b6028e9899f55a120dd"),
     Pkg.PackageSpec(url="https://github.com/DOC-Package/QFiND.jl.git", rev="e5d1186cb2f07195c8dd07429861cbe898c9b4da"),
-    Pkg.PackageSpec(url="https://github.com/DOC-Package/ExpFit.jl.git", rev="c9abc3870b30341e77574ea1cf818134e14180e0"),
 ])
 Pkg.instantiate()
 '
@@ -27,14 +26,14 @@ Pkg.instantiate()
 
 `Project.toml` declares every direct dependency and its compatibility range;
 the setup command records the local/unregistered sources in the generated
-Manifest. If those four repositories are checked out beside the primary
+Manifest. If those three repositories are checked out beside the primary
 TTDynamics checkout and you want the example to use the local working copies,
-develop the five paths instead. `DEV_ROOT` works from either the primary
+develop the four paths instead. `DEV_ROOT` works from either the primary
 checkout or a linked Git worktree:
 
 ```bash
 DEV_ROOT="$(dirname "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")")"
-julia --project=examples/holstein -e 'using Pkg; Pkg.develop([Pkg.PackageSpec(path=path) for path in ARGS]); Pkg.instantiate()' "$PWD" "$DEV_ROOT/TTSolver" "$DEV_ROOT/KaisouEOM" "$DEV_ROOT/QFiND" "$DEV_ROOT/ExpFit"
+julia --project=examples/holstein -e 'using Pkg; Pkg.develop([Pkg.PackageSpec(path=path) for path in ARGS]); Pkg.instantiate()' "$PWD" "$DEV_ROOT/TTSolver" "$DEV_ROOT/KaisouEOM" "$DEV_ROOT/QFiND"
 ```
 
 Both setup commands create an environment-local `Manifest.toml`; it is ignored
@@ -56,5 +55,7 @@ simulation or write outputs, run:
 julia --project=examples/holstein -e 'include("examples/holstein/holstein_brownian_heomtt.jl"); @assert DEFAULT_CONFIG.temporal_basis_size == 3'
 ```
 
-Before treating results as production calculations, converge the BCF window
-and fit tolerance, hierarchy local size, time step, and TT tolerances.
+The TPSD defaults are `pade_order=8`, `tpsd_tolerance=5e-2`, and
+`pade_type=:Nm1`. Before treating results as production calculations, converge
+the Padé order, TPSD tolerance, hierarchy local size, time step, and TT
+tolerances.
