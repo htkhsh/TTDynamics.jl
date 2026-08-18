@@ -61,4 +61,92 @@ using Test
             @test_throws ArgumentError load_tt_binary(first_path)
         end
     end
+
+    @testset "overwrite policy" begin
+        tt = TTTensor([reshape(Float64[1, 2], 1, 2, 1)])
+        mktempdir() do directory
+            path = joinpath(directory, "state.ttbin")
+            save_tt_binary(path, tt)
+            original = read(path)
+            @test_throws ArgumentError save_tt_binary(path, tt)
+            @test read(path) == original
+            @test save_tt_binary(path, tt; overwrite=true) == path
+            @test load_tt_binary(path).cores == tt.cores
+        end
+    end
+
+    @testset "invalid files" begin
+        append_u16!(bytes, x) = append!(bytes, reinterpret(UInt8, [htol(UInt16(x))]))
+        append_u32!(bytes, x) = append!(bytes, reinterpret(UInt8, [htol(UInt32(x))]))
+        append_u64!(bytes, x) = append!(bytes, reinterpret(UInt8, [htol(UInt64(x))]))
+
+        function tensor_file_bytes(core_count)
+            bytes = UInt8[codeunits("TTDYNBIN")...]
+            append_u16!(bytes, 1)
+            push!(bytes, 0x01, 0x02)
+            append_u32!(bytes, core_count)
+            bytes
+        end
+
+        function append_tensor_core!(bytes, dimensions, element_count)
+            for dimension in dimensions
+                append_u64!(bytes, dimension)
+            end
+            for _ in 1:element_count
+                append_u64!(bytes, 0)
+            end
+            bytes
+        end
+
+        tt = TTTensor([reshape(Float64[1, 2], 1, 2, 1)])
+        mktempdir() do directory
+            valid_path = joinpath(directory, "valid.ttbin")
+            save_tt_binary(valid_path, tt)
+            valid = read(valid_path)
+
+            function rejected(name, bytes)
+                path = joinpath(directory, name)
+                write(path, bytes)
+                @test_throws ArgumentError load_tt_binary(path)
+            end
+
+            bad_magic = copy(valid); bad_magic[1] = 0xff
+            bad_version = copy(valid); bad_version[9:10] .= UInt8[0x02, 0x00]
+            bad_kind = copy(valid); bad_kind[11] = 0xff
+            bad_scalar = copy(valid); bad_scalar[12] = 0xff
+            zero_cores = copy(valid); zero_cores[13:16] .= 0x00
+
+            rejected("magic.ttbin", bad_magic)
+            rejected("version.ttbin", bad_version)
+            rejected("kind.ttbin", bad_kind)
+            rejected("scalar.ttbin", bad_scalar)
+            rejected("cores.ttbin", zero_cores)
+            rejected("truncated-header.ttbin", valid[1:12])
+            rejected("truncated-data.ttbin", valid[1:end-1])
+            rejected("trailing.ttbin", [valid; 0xff])
+
+            zero_dimension = tensor_file_bytes(1)
+            append_tensor_core!(zero_dimension, (0, 2, 1), 0)
+            rejected("zero-dimension.ttbin", zero_dimension)
+
+            huge_dimension = tensor_file_bytes(1)
+            append_tensor_core!(huge_dimension, (UInt64(typemax(Int)) + 1, 1, 1), 0)
+            rejected("huge-dimension.ttbin", huge_dimension)
+
+            rank_mismatch = tensor_file_bytes(2)
+            append_tensor_core!(rank_mismatch, (1, 2, 2), 4)
+            append_tensor_core!(rank_mismatch, (3, 2, 1), 6)
+            rejected("rank-mismatch.ttbin", rank_mismatch)
+        end
+    end
+
+    @testset "unsupported save type" begin
+        tt = TTTensor([reshape(Int[1, 2], 1, 2, 1)])
+        mktempdir() do directory
+            path = joinpath(directory, "integer.ttbin")
+            @test_throws ArgumentError save_tt_binary(path, tt)
+            @test !ispath(path)
+            @test isempty(readdir(directory))
+        end
+    end
 end

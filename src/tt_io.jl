@@ -53,6 +53,22 @@ _read_scalar(io::IO, ::Type{T}) where {T<:AbstractFloat} =
 _read_scalar(io::IO, ::Type{Complex{T}}) where {T<:AbstractFloat} =
     Complex{T}(_read_component(io, T), _read_component(io, T))
 
+_format_error(message) = throw(ArgumentError("invalid TT binary file: $message"))
+
+function _checked_dimensions(raw::NTuple{N,UInt64}, core_index::Int) where {N}
+    any(iszero, raw) && _format_error("core $core_index has a zero dimension")
+    any(value -> value > UInt64(typemax(Int)), raw) &&
+        _format_error("core $core_index has a dimension larger than typemax(Int)")
+    dimensions = ntuple(i -> Int(raw[i]), N)
+    try
+        foldl(Base.checked_mul, dimensions; init=1)
+    catch error
+        error isa OverflowError || rethrow()
+        _format_error("core $core_index element count overflows Int")
+    end
+    dimensions
+end
+
 _object_kind(::TTTensor) = _TT_TENSOR_KIND
 _object_kind(::TTMatrix) = _TT_MATRIX_KIND
 _core_ndims(kind::UInt8) = kind == _TT_TENSOR_KIND ? 3 : 4
@@ -89,42 +105,98 @@ function _write_tt(io::IO, tt::Union{TTTensor,TTMatrix})
 end
 
 function _read_tt(io::IO)
-    read(io, length(_TT_BINARY_MAGIC)) == _TT_BINARY_MAGIC ||
-        throw(ArgumentError("invalid TT binary magic"))
-    _read_le(io, UInt16) == _TT_BINARY_VERSION ||
-        throw(ArgumentError("unsupported TT binary version"))
+    try
+        magic = read(io, length(_TT_BINARY_MAGIC))
+        length(magic) == length(_TT_BINARY_MAGIC) && magic == _TT_BINARY_MAGIC ||
+            _format_error("invalid TT binary magic")
+        _read_le(io, UInt16) == _TT_BINARY_VERSION ||
+            _format_error("unsupported TT binary version")
 
-    kind = read(io, UInt8)
-    kind in (_TT_TENSOR_KIND, _TT_MATRIX_KIND) || throw(ArgumentError("invalid TT binary object kind"))
+        kind = read(io, UInt8)
+        kind in (_TT_TENSOR_KIND, _TT_MATRIX_KIND) ||
+            _format_error("invalid TT binary object kind")
 
-    scalar_code = read(io, UInt8)
-    haskey(_TT_CODE_TYPES, scalar_code) || throw(ArgumentError("invalid TT binary scalar code"))
-    T = _TT_CODE_TYPES[scalar_code]
+        scalar_code = read(io, UInt8)
+        haskey(_TT_CODE_TYPES, scalar_code) ||
+            _format_error("invalid TT binary scalar code")
+        T = _TT_CODE_TYPES[scalar_code]
 
-    core_count = Int(_read_le(io, UInt32))
-    ndims = _core_ndims(kind)
-    cores = [
-        _read_core(io, T, ntuple(_ -> Int(_read_le(io, UInt64)), ndims))
-        for _ in 1:core_count
-    ]
+        core_count = _read_le(io, UInt32)
+        iszero(core_count) && _format_error("core count must be positive")
+        ndims = _core_ndims(kind)
+        cores = [
+            _read_core(io, T,
+                       _checked_dimensions(ntuple(_ -> _read_le(io, UInt64), ndims), index))
+            for index in 1:Int(core_count)
+        ]
+        rank_dimension = kind == _TT_TENSOR_KIND ? 3 : 4
+        for index in 2:length(cores)
+            size(cores[index - 1], rank_dimension) == size(cores[index], 1) ||
+                _format_error("invalid TT ranks: core $index has a mismatched left rank")
+        end
 
-    kind == _TT_TENSOR_KIND ? TTTensor(cores) : TTMatrix(cores)
+        tt = try
+            kind == _TT_TENSOR_KIND ? TTTensor(cores) : TTMatrix(cores)
+        catch error
+            message = sprint(showerror, error)
+            occursin("rank mismatch", message) || rethrow()
+            _format_error("invalid TT ranks: $message")
+        end
+        eof(io) || _format_error("trailing bytes")
+        tt
+    catch error
+        error isa EOFError && _format_error("unexpected end of file")
+        rethrow()
+    end
+end
+
+function _validate_tt_for_save(tt::Union{TTTensor,TTMatrix})
+    cores = tt.cores
+    isempty(cores) && throw(ArgumentError("TT cores must be non-empty"))
+    length(cores) > typemax(UInt32) &&
+        throw(ArgumentError("TT core count exceeds UInt32 capacity"))
+
+    T = eltype(first(cores))
+    haskey(_TT_SCALAR_CODES, T) || throw(ArgumentError("unsupported TT scalar type: $T"))
+    for (core_index, core) in pairs(cores)
+        for dimension in size(core)
+            dimension > 0 ||
+                throw(ArgumentError("TT core $core_index has a zero dimension"))
+            UInt128(dimension) > typemax(UInt64) &&
+                throw(ArgumentError("TT core $core_index dimension exceeds UInt64 capacity"))
+        end
+    end
+    nothing
 end
 
 function save_tt_binary(path::AbstractString,
                         tt::Union{TTTensor,TTMatrix}; overwrite::Bool=false)
     target = String(path)
-    !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
-    open(target, "w") do io
-        _write_tt(io, tt)
+    _validate_tt_for_save(tt)
+    !overwrite && ispath(target) &&
+        throw(ArgumentError("target already exists: $target"))
+
+    temporary_path = nothing
+    try
+        temporary_path, io = mktemp(dirname(abspath(target)))
+        try
+            _write_tt(io, tt)
+        finally
+            close(io)
+        end
+        if !overwrite && ispath(target)
+            throw(ArgumentError("target already exists: $target"))
+        end
+        mv(temporary_path, target; force=overwrite)
+        temporary_path = nothing
+        target
+    finally
+        temporary_path === nothing || rm(temporary_path; force=true)
     end
-    target
 end
 
 function load_tt_binary(path::AbstractString)
     open(String(path), "r") do io
-        tt = _read_tt(io)
-        eof(io) || throw(ArgumentError("unexpected trailing data in TT binary file"))
-        tt
+        _read_tt(io)
     end
 end
