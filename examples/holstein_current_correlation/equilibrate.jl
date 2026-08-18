@@ -37,7 +37,7 @@ const DEFAULT_EQUILIBRATION_STATE_PATH = joinpath(
 )
 const DEFAULT_EQUILIBRATION_METADATA_PATH = joinpath(
     DEFAULT_EQUILIBRATION_OUTPUT_DIRECTORY,
-    "holstein_equilibrium.toml",
+    "holstein_equilibrium_metadata.toml",
 )
 const DEFAULT_EQUILIBRATION_CSV_PATH = joinpath(
     DEFAULT_EQUILIBRATION_OUTPUT_DIRECTORY,
@@ -68,7 +68,8 @@ replacement runs.
 function save_equilibration_outputs(config::HolsteinConfig, decomposition, problem, result;
                                     output_directory::AbstractString=DEFAULT_EQUILIBRATION_OUTPUT_DIRECTORY,
                                     equilibration_time_fs::Real=DEFAULT_EQUILIBRATION_TIME_FS,
-                                    overwrite::Bool=false)::NamedTuple
+                                    overwrite::Bool=false,
+                                    metadata_writer=write_equilibrium_metadata)::NamedTuple
     _equilibration_step_count(config, equilibration_time_fs)
     paths = _equilibration_output_paths(output_directory)
     if !overwrite
@@ -90,7 +91,7 @@ function save_equilibration_outputs(config::HolsteinConfig, decomposition, probl
             result.state;
             equilibration_time_fs,
         )
-        metadata_path = write_equilibrium_metadata(paths.metadata_path, metadata; overwrite)
+        metadata_path = metadata_writer(paths.metadata_path, metadata; overwrite)
         return (; state_path, metadata_path, csv_path)
     catch
         if binary_saved && !overwrite

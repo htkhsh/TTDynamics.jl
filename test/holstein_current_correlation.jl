@@ -400,6 +400,12 @@ end
         initial_state=state,
         equilibration_time_fs=0.0,
     )
+    @test_throws ArgumentError run_equilibration(
+        config,
+        problem;
+        initial_state=state,
+        equilibration_time_fs=eps(Float64) / 2,
+    )
 
     mktempdir() do directory
         outputs = save_equilibration_outputs(
@@ -413,6 +419,7 @@ end
         @test isfile(outputs.state_path)
         @test isfile(outputs.metadata_path)
         @test isfile(outputs.csv_path)
+        @test basename(outputs.metadata_path) == "holstein_equilibrium_metadata.toml"
         @test_throws ArgumentError write_equilibration_csv(outputs.csv_path, result)
         restored = load_tt_binary(outputs.state_path)
         @test validate_equilibrium_state(
@@ -430,6 +437,40 @@ end
             output_directory=directory,
             equilibration_time_fs=config.time_step_fs,
         )
+    end
+
+    metadata_write_failure = (args...; kwargs...) -> error("forced metadata publication failure")
+    mktempdir() do directory
+        paths = _equilibration_output_paths(directory)
+        @test_throws ErrorException save_equilibration_outputs(
+            config,
+            decomposition,
+            problem,
+            result;
+            output_directory=directory,
+            equilibration_time_fs=config.time_step_fs,
+            metadata_writer=metadata_write_failure,
+        )
+        @test isfile(paths.csv_path)
+        @test !ispath(paths.state_path)
+        @test !ispath(paths.metadata_path)
+    end
+
+    mktempdir() do directory
+        paths = _equilibration_output_paths(directory)
+        save_tt_binary(paths.state_path, state)
+        @test_throws ErrorException save_equilibration_outputs(
+            config,
+            decomposition,
+            problem,
+            result;
+            output_directory=directory,
+            equilibration_time_fs=config.time_step_fs,
+            overwrite=true,
+            metadata_writer=metadata_write_failure,
+        )
+        @test isfile(paths.state_path)
+        @test load_tt_binary(paths.state_path).cores == result.state.cores
     end
 
     mktempdir() do directory
@@ -485,5 +526,45 @@ end
         @test rows[2] == "0.0,1.5,-2.0,2,1.5"
         @test rows[3] == "1.0,-3.0,4.25,3,2.0"
         @test_throws ArgumentError write_current_correlation_csv(path, synthetic_result)
+    end
+
+    mktempdir() do directory
+        target = joinpath(directory, "current_correlation.png")
+        result = (times=[0.0], correlation=ComplexF64[1.0 + 2.0im])
+        writer = (path, _) -> write(path, "first png")
+        @test write_current_correlation_png(target, result, writer) == target
+        @test read(target, String) == "first png"
+        @test_throws ArgumentError write_current_correlation_png(target, result, writer)
+
+        rm(target)
+        racing_writer = (path, _) -> begin
+            write(target, "concurrent png")
+            write(path, "temporary png")
+        end
+        @test_throws ArgumentError write_current_correlation_png(target, result, racing_writer)
+        @test read(target, String) == "concurrent png"
+        replacing_writer = (path, _) -> write(path, "replacement png")
+        @test write_current_correlation_png(
+            target,
+            result,
+            replacing_writer;
+            overwrite=true,
+        ) == target
+        @test read(target, String) == "replacement png"
+    end
+end
+
+@testset "Holstein current-correlation executable guard" begin
+    example_directory = joinpath(@__DIR__, "..", "examples", "holstein_current_correlation")
+    manifest_path = joinpath(example_directory, "Manifest.toml")
+    if isfile(manifest_path)
+        command = `$(Base.julia_cmd()) --project=$example_directory -e $(
+            "include(\"examples/holstein_current_correlation/current_correlation.jl\"); " *
+            "@assert DEFAULT_CORRELATION_TIME_FS == 200.0; " *
+            "@assert !ispath(\"examples/holstein_current_correlation/output\")"
+        )`
+        @test success(command)
+    else
+        @test_skip "example environment has not been instantiated"
     end
 end

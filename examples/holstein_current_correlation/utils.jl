@@ -511,6 +511,8 @@ function _equilibration_step_count(config::HolsteinConfig,
     step_count = round(Int, ratio)
     isapprox(ratio, step_count; rtol=0, atol=eps(Float64) * max(1, abs(ratio))) ||
         throw(ArgumentError("equilibration_time_fs must be an integral multiple of time_step_fs"))
+    step_count >= 1 ||
+        throw(ArgumentError("equilibration_time_fs must include at least one time step"))
     return step_count
 end
 
@@ -704,6 +706,38 @@ function write_current_correlation_csv(path::AbstractString, result;
         finally
             close(io)
         end
+        !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
+        if overwrite
+            _equilibrium_atomic_rename(temporary_path, target)
+            temporary_path = nothing
+        else
+            Base.Filesystem.hardlink(temporary_path, target)
+        end
+        return target
+    finally
+        temporary_path === nothing || rm(temporary_path; force=true)
+    end
+end
+
+"""
+    write_current_correlation_png(path, result, plotter; overwrite=false) -> String
+
+Render a correlation plot to a sibling temporary PNG, then publish it without
+clobbering an existing target unless replacement is explicitly requested.
+"""
+function write_current_correlation_png(path::AbstractString, result, plotter;
+                                       overwrite::Bool=false)::String
+    target = String(path)
+    !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
+    temporary_path = nothing
+    try
+        temporary_path, io = mktemp(dirname(abspath(target)))
+        close(io)
+        png_temporary_path = "$(temporary_path).png"
+        mv(temporary_path, png_temporary_path)
+        temporary_path = png_temporary_path
+        plotter(temporary_path, result)
+        isfile(temporary_path) || throw(ArgumentError("plotter did not write a PNG file"))
         !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
         if overwrite
             _equilibrium_atomic_rename(temporary_path, target)

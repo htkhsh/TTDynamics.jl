@@ -89,7 +89,7 @@ function current_correlation_main(config=DEFAULT_CONFIG;
 
     csv_path = write_current_correlation_csv(paths.csv_path, result; overwrite)
     try
-        png_path = plotter(paths.png_path, result)
+        png_path = write_current_correlation_png(paths.png_path, result, plotter; overwrite)
         println("  Final source TT ranks: $(tt_ranks(result.state))")
         println("  Wrote: $csv_path")
         println("  Wrote: $png_path")
