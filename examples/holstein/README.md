@@ -6,14 +6,16 @@ do not become dependencies of the TTDynamics library.
 
 ## Setup
 
-Develop this TTDynamics checkout plus known-compatible revisions of the four
-unregistered packages, then instantiate the remaining registered dependencies:
+Add known-compatible revisions of TTDynamics and the four unregistered
+dependencies in one transaction, then instantiate the remaining registered
+dependencies. The remote workflow uses `Pkg.add` because Julia's `Pkg.develop`
+does not accept pinned `rev` specifications:
 
 ```bash
 julia --project=examples/holstein -e '
 using Pkg
-Pkg.develop(Pkg.PackageSpec(path=pwd()))
-Pkg.develop([
+Pkg.add([
+    Pkg.PackageSpec(url="https://github.com/htkhsh/TTDynamics.jl.git", rev="ace749d14ed8dd7eeef74cd21ba00dc11a4ade7b"),
     Pkg.PackageSpec(url="https://github.com/htkhsh/TTSolver.jl.git", rev="7a2eb169648257b9619c14bab349d63798bd220a"),
     Pkg.PackageSpec(url="https://github.com/DOC-Package/KaisouEOM.jl.git", rev="06f7939557bce802ea967b6028e9899f55a120dd"),
     Pkg.PackageSpec(url="https://github.com/DOC-Package/QFiND.jl.git", rev="e5d1186cb2f07195c8dd07429861cbe898c9b4da"),
