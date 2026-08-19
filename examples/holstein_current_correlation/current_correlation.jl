@@ -64,7 +64,8 @@ function current_correlation_main(config=DEFAULT_CONFIG;
                                   decomposition_builder=_default_decomposition_builder,
                                   problem_builder=_default_problem_builder,
                                   correlation_runner=run_current_correlation,
-                                  plotter=_save_current_correlation_plot)::NamedTuple
+                                  plotter=_save_current_correlation_plot,
+                                  progress_io::IO=stdout)::NamedTuple
     validate_config(config)
     _correlation_step_count(config, correlation_time_fs)
     paths = _current_correlation_output_paths(output_directory)
@@ -80,17 +81,20 @@ function current_correlation_main(config=DEFAULT_CONFIG;
     equilibrium_state = load_tt_binary(paths.state_path)
     metadata = read_equilibrium_metadata(paths.metadata_path)
     validate_equilibrium_state(equilibrium_state, metadata, config, decomposition, problem)
+    _print_tt_rank_vector(progress_io, "Loaded equilibrium TT ranks", equilibrium_state)
     result = correlation_runner(
         equilibrium_state,
         config,
         problem;
         correlation_time_fs,
+        progress_callback=progress ->
+            _print_current_correlation_progress(progress_io, progress),
     )
 
     csv_path = write_current_correlation_csv(paths.csv_path, result; overwrite)
     try
         png_path = write_plot_png(paths.png_path, result, plotter; overwrite)
-        println("  Final source TT ranks: $(tt_ranks(result.state))")
+        _print_tt_rank_vector(progress_io, "Final source TT ranks", result.state)
         println("  Wrote: $csv_path")
         println("  Wrote: $png_path")
         return (; result, decomposition, problem, state_path=paths.state_path,

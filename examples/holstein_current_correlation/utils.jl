@@ -627,6 +627,25 @@ function _correlation_step_count(config::HolsteinConfig,
     return step_count
 end
 
+function _print_current_correlation_progress(io::IO, progress)::Nothing
+    elapsed = round(progress.elapsed_seconds; digits=2)
+    println(
+        io,
+        "  Step $(progress.step)/$(progress.step_count) | " *
+        "time=$(progress.time_fs) fs | " *
+        "max rank=$(progress.maximum_rank) | " *
+        "mean rank=$(progress.mean_rank) | " *
+        "elapsed=$(elapsed) s",
+    )
+    return nothing
+end
+
+function _print_tt_rank_vector(io::IO, label::AbstractString,
+                               state::TTTensor)::Nothing
+    println(io, "  $label: $(tt_ranks(state))")
+    return nothing
+end
+
 """
     run_current_correlation(equilibrium_state, config, problem;
                             correlation_time_fs=200.0) -> NamedTuple
@@ -636,7 +655,8 @@ unsymmetrized correlation `Tr[J exp(Lt)(J rho_eq)]` at every fixed time step.
 """
 function run_current_correlation(equilibrium_state::TTTensor,
                                  config::HolsteinConfig, problem;
-                                 correlation_time_fs::Real=200.0)::NamedTuple
+                                 correlation_time_fs::Real=200.0,
+                                 progress_callback=nothing)::NamedTuple
     validate_config(config)
     step_count = _correlation_step_count(config, correlation_time_fs)
     operators = build_current_heom_operators(config, problem)
@@ -645,16 +665,34 @@ function run_current_correlation(equilibrium_state::TTTensor,
         exact_source,
         config.state_rounding_tolerance,
     )
+    start_time_ns = time_ns()
+    observe_current_state = function(step, time, state)
+        ranks = tt_ranks(state)
+        observation = (
+            correlation=ComplexF64(tt_dot(operators.observable, state)),
+            maximum_rank=maximum(ranks),
+            mean_rank=mean(ranks),
+        )
+        should_report = step == 0 || step == step_count ||
+                        step % config.progress_interval == 0
+        if progress_callback !== nothing && should_report
+            progress_callback((;
+                step,
+                step_count,
+                time_fs=time,
+                maximum_rank=observation.maximum_rank,
+                mean_rank=observation.mean_rank,
+                elapsed_seconds=(time_ns() - start_time_ns) / 1.0e9,
+            ))
+        end
+        return observation
+    end
     propagated = propagate_fixed_steps(
         source,
         problem,
         config,
         step_count;
-        observe=(step, time, state) -> (
-            correlation=ComplexF64(tt_dot(operators.observable, state)),
-            maximum_rank=maximum(tt_ranks(state)),
-            mean_rank=mean(tt_ranks(state)),
-        ),
+        observe=observe_current_state,
     )
     observations = propagated.observations
     times = collect(0:step_count) .* config.time_step_fs

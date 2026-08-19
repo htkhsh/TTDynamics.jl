@@ -29,10 +29,12 @@ function current_correlation_problem(config)
 end
 
 function unchecked_holstein_config(config; site_count=config.site_count,
-                                   hopping_cm=config.hopping_cm)
+                                   hopping_cm=config.hopping_cm,
+                                   progress_interval=config.progress_interval)
     values = Any[getfield(config, index) for index in 1:fieldcount(HolsteinConfig)]
     values[1] = site_count
     values[3] = hopping_cm
+    values[25] = progress_interval
     return HolsteinConfig(values...)
 end
 
@@ -700,6 +702,40 @@ end
         problem;
         correlation_time_fs=0.5,
     )
+
+    progress_config = unchecked_holstein_config(config; progress_interval=2)
+    progress_records = NamedTuple[]
+    progress_result = run_current_correlation(
+        state,
+        progress_config,
+        problem;
+        correlation_time_fs=5.0,
+        progress_callback=record -> push!(progress_records, record),
+    )
+    @test [record.step for record in progress_records] == [0, 2, 4, 5]
+    @test [record.step_count for record in progress_records] == fill(5, 4)
+    @test [record.time_fs for record in progress_records] == [0.0, 2.0, 4.0, 5.0]
+    for record in progress_records
+        result_index = record.step + 1
+        @test record.maximum_rank == progress_result.maximum_rank[result_index]
+        @test record.mean_rank == progress_result.mean_rank[result_index]
+        @test isfinite(record.elapsed_seconds)
+        @test record.elapsed_seconds >= 0
+    end
+
+    progress_io = IOBuffer()
+    _print_current_correlation_progress(progress_io, progress_records[2])
+    progress_message = String(take!(progress_io))
+    @test occursin("Step 2/5", progress_message)
+    @test occursin("time=2.0 fs", progress_message)
+    @test occursin("max rank=$(progress_records[2].maximum_rank)", progress_message)
+    @test occursin("mean rank=$(progress_records[2].mean_rank)", progress_message)
+    @test occursin("elapsed=", progress_message)
+
+    rank_io = IOBuffer()
+    _print_tt_rank_vector(rank_io, "Loaded equilibrium TT ranks", state)
+    @test String(take!(rank_io)) ==
+          "  Loaded equilibrium TT ranks: $(tt_ranks(state))\n"
 
     synthetic_result = (
         times=[0.0, 1.0],
