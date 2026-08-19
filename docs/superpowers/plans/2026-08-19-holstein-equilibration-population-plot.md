@@ -180,7 +180,7 @@ Expected: all focused assertions pass.
 Then run a small rendering-only check that does not propagate HEOM:
 
 ```bash
-julia --startup-file=no --project=examples/holstein_current_correlation -e 'include("examples/holstein_current_correlation/equilibrate.jl"); mktempdir() do d; result=(times=[0.0,1.0], populations=[1.0 0.8; 0.0 0.2]); p=_save_equilibration_population_plot(joinpath(d,"populations.png"), result); @assert isfile(p); end'
+julia --startup-file=no --project=examples/holstein_current_correlation -e 'include("examples/holstein_current_correlation/equilibrate.jl"); mktempdir() do d; result=(times=[0.0,1.0], populations=[1.0 0.8; 0.0 0.2]); p=_default_equilibration_plotter(joinpath(d,"populations.png"), result); @assert isfile(p); end'
 ```
 
 Expected: exit status 0 and a valid temporary PNG is created.

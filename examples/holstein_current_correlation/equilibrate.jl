@@ -160,7 +160,8 @@ end
                      overwrite=false) -> NamedTuple
 
 Build the default Holstein HEOM problem, equilibrate it for 1000 fs by
-default, and save a binary state with matching TOML and CSV diagnostics.
+default, and save a binary state with matching TOML and CSV diagnostics plus
+an automatic site-population PNG.
 """
 function equilibrate_main(config=DEFAULT_CONFIG;
                           equilibration_time_fs::Real=DEFAULT_EQUILIBRATION_TIME_FS,

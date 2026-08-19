@@ -431,6 +431,58 @@ end
     end
 end
 
+@testset "Holstein lazy plotter is world-age safe" begin
+    mktempdir() do directory
+        fixture_directory = joinpath(directory, "fixture")
+        mkpath(fixture_directory)
+
+        equilibrate_source = joinpath(
+            @__DIR__,
+            "..",
+            "examples",
+            "holstein_current_correlation",
+            "equilibrate.jl",
+        )
+        cp(equilibrate_source, joinpath(fixture_directory, "equilibrate.jl"))
+        write(
+            joinpath(fixture_directory, "plotting.jl"),
+            """
+            function _save_equilibration_population_plot(path, result)
+                write(path, "stub plot")
+                return path
+            end
+            """,
+        )
+
+        fixture_script = joinpath(fixture_directory, "world_age_plotter_fixture.jl")
+        write(
+            fixture_script,
+            """
+            pushfirst!(LOAD_PATH, $(repr(joinpath(@__DIR__, ".."))))
+
+            struct HolsteinConfig end
+            const DEFAULT_CONFIG = HolsteinConfig()
+            run_equilibration(args...; kwargs...) = nothing
+
+            include(joinpath(@__DIR__, "equilibrate.jl"))
+
+            function invoke_default_plotter(path, result)
+                return _default_equilibration_plotter(path, result)
+            end
+
+            mktempdir() do directory
+                path = joinpath(directory, "population.png")
+                @assert invoke_default_plotter(path, :result) == path
+                @assert read(path, String) == "stub plot"
+            end
+            """,
+        )
+        command = `$(Base.julia_cmd()) --startup-file=no --depwarn=error $fixture_script`
+        process = run(ignorestatus(command))
+        @test success(process)
+    end
+end
+
 @testset "Holstein fixed-time equilibration" begin
     fixture = equilibration_fixture()
     (; config, decomposition, problem, state) = fixture
@@ -674,6 +726,10 @@ end
         @test_throws ArgumentError write_plot_png(target, result, writer)
 
         rm(target)
+        no_output_plotter = (path, _) -> nothing
+        @test_throws ArgumentError write_plot_png(target, result, no_output_plotter)
+        @test !ispath(target)
+
         racing_writer = (path, _) -> begin
             write(target, "concurrent png")
             write(path, "temporary png")

@@ -736,6 +736,7 @@ function write_plot_png(path::AbstractString, result, plotter;
         png_temporary_path = "$(temporary_path).png"
         mv(temporary_path, png_temporary_path)
         temporary_path = png_temporary_path
+        rm(temporary_path)
         plotter(temporary_path, result)
         isfile(temporary_path) || throw(ArgumentError("plotter did not write a PNG file"))
         !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
