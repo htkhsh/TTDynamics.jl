@@ -370,6 +370,63 @@ end
     @test measurement.mean_rank >= 1
 end
 
+@testset "Holstein lazy builders are world-age safe" begin
+    mktempdir() do directory
+        fixture_directory = joinpath(directory, "fixture")
+        holstein_directory = joinpath(directory, "holstein")
+        mkpath(fixture_directory)
+        mkpath(holstein_directory)
+
+        equilibrate_source = joinpath(
+            @__DIR__,
+            "..",
+            "examples",
+            "holstein_current_correlation",
+            "equilibrate.jl",
+        )
+        cp(equilibrate_source, joinpath(fixture_directory, "equilibrate.jl"))
+        write(
+            joinpath(holstein_directory, "holstein_brownian_heomtt.jl"),
+            """
+            function decompose_brownian_bcf(config)
+                config isa HolsteinConfig || error("unexpected configuration")
+                return :decomposition
+            end
+
+            function build_holstein_heomtt(config, decomposition)
+                config isa HolsteinConfig || error("unexpected configuration")
+                decomposition === :decomposition || error("unexpected decomposition")
+                return :problem
+            end
+            """,
+        )
+
+        fixture_script = joinpath(fixture_directory, "world_age_fixture.jl")
+        write(
+            fixture_script,
+            """
+            pushfirst!(LOAD_PATH, $(repr(joinpath(@__DIR__, ".."))))
+
+            struct HolsteinConfig end
+            const DEFAULT_CONFIG = HolsteinConfig()
+            run_equilibration(args...; kwargs...) = nothing
+
+            include(joinpath(@__DIR__, "equilibrate.jl"))
+
+            function invoke_default_builders(config)
+                decomposition = _default_decomposition_builder(config)
+                return _default_problem_builder(config, decomposition)
+            end
+
+            @assert invoke_default_builders(HolsteinConfig()) === :problem
+            """,
+        )
+        command = `$(Base.julia_cmd()) --startup-file=no --depwarn=error $fixture_script`
+        process = run(ignorestatus(command))
+        @test success(process)
+    end
+end
+
 @testset "Holstein fixed-time equilibration" begin
     fixture = equilibration_fixture()
     (; config, decomposition, problem, state) = fixture
@@ -558,10 +615,12 @@ end
     example_directory = joinpath(@__DIR__, "..", "examples", "holstein_current_correlation")
     manifest_path = joinpath(example_directory, "Manifest.toml")
     if isfile(manifest_path)
+        correlation_script = repr(joinpath(example_directory, "current_correlation.jl"))
+        output_directory = repr(joinpath(example_directory, "output"))
         command = `$(Base.julia_cmd()) --project=$example_directory -e $(
-            "include(\"examples/holstein_current_correlation/current_correlation.jl\"); " *
+            "include($correlation_script); " *
             "@assert DEFAULT_CORRELATION_TIME_FS == 200.0; " *
-            "@assert !ispath(\"examples/holstein_current_correlation/output\")"
+            "@assert !ispath($output_directory)"
         )`
         @test success(command)
     else

@@ -14,19 +14,21 @@ end
 function _load_holstein_builders()
     if !isdefined(@__MODULE__, :decompose_brownian_bcf) ||
        !isdefined(@__MODULE__, :build_holstein_heomtt)
-        include("../holstein/holstein_brownian_heomtt.jl")
+        include(joinpath(@__DIR__, "..", "holstein", "holstein_brownian_heomtt.jl"))
     end
     return nothing
 end
 
 function _default_decomposition_builder(config)
     _load_holstein_builders()
-    return decompose_brownian_bcf(config)
+    builder = Base.invokelatest(getfield, @__MODULE__, :decompose_brownian_bcf)
+    return Base.invokelatest(builder, config)
 end
 
 function _default_problem_builder(config, decomposition)
     _load_holstein_builders()
-    return build_holstein_heomtt(config, decomposition)
+    builder = Base.invokelatest(getfield, @__MODULE__, :build_holstein_heomtt)
+    return Base.invokelatest(builder, config, decomposition)
 end
 
 const DEFAULT_EQUILIBRATION_TIME_FS = 1000.0

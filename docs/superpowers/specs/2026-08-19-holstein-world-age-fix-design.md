@@ -12,8 +12,9 @@ builder, so direct calls can warn and then fail with a world-age `MethodError`.
 Keep the existing lazy loading so that importing the current-correlation
 utilities does not require every example-only dependency. After loading, look
 up `decompose_brownian_bcf` and `build_holstein_heomtt` dynamically from the
-current module and invoke each with `Base.invokelatest`. This applies the
-world-age boundary only to the two functions that may have just been defined.
+current module in the latest world, then invoke each with `Base.invokelatest`.
+This applies the world-age boundary only to the two functions that may have
+just been defined.
 Injected builders used by tests and callers remain unchanged.
 
 ## Error Handling

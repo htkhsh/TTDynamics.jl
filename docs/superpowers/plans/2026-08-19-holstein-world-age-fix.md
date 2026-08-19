@@ -4,7 +4,7 @@
 
 **Goal:** Make the lazily loaded Holstein decomposition and HEOM problem builders callable on Julia 1.12 without world-age warnings or errors.
 
-**Architecture:** Preserve the current lazy include boundary in `equilibrate.jl`. Resolve each newly loaded builder through the current module and cross the world-age boundary with `Base.invokelatest`, while leaving explicitly injected builders on the normal direct-call path.
+**Architecture:** Preserve the current lazy include boundary in `equilibrate.jl`. Resolve each newly loaded builder through the current module in the latest world, then cross the call boundary with `Base.invokelatest`, while leaving explicitly injected builders on the normal direct-call path.
 
 **Tech Stack:** Julia 1.12, `Base.invokelatest`, Julia `Test`, TTDynamics example environment
 
@@ -55,13 +55,13 @@ After `_load_holstein_builders()`, retrieve each function dynamically and invoke
 ```julia
 function _default_decomposition_builder(config)
     _load_holstein_builders()
-    builder = getfield(@__MODULE__, :decompose_brownian_bcf)
+    builder = Base.invokelatest(getfield, @__MODULE__, :decompose_brownian_bcf)
     return Base.invokelatest(builder, config)
 end
 
 function _default_problem_builder(config, decomposition)
     _load_holstein_builders()
-    builder = getfield(@__MODULE__, :build_holstein_heomtt)
+    builder = Base.invokelatest(getfield, @__MODULE__, :build_holstein_heomtt)
     return Base.invokelatest(builder, config, decomposition)
 end
 ```
