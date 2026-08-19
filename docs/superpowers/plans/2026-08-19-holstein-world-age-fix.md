@@ -50,9 +50,17 @@ Expected: the new subprocess test fails because direct access to the lazily defi
 
 - [ ] **Step 3: Implement the minimal world-age-safe calls**
 
-After `_load_holstein_builders()`, retrieve each function dynamically and invoke it in the latest world:
+Anchor the lazy include to `equilibrate.jl` so it works independently of the process working directory. After `_load_holstein_builders()`, retrieve each function dynamically and invoke it in the latest world:
 
 ```julia
+function _load_holstein_builders()
+    if !isdefined(@__MODULE__, :decompose_brownian_bcf) ||
+       !isdefined(@__MODULE__, :build_holstein_heomtt)
+        include(joinpath(@__DIR__, "..", "holstein", "holstein_brownian_heomtt.jl"))
+    end
+    return nothing
+end
+
 function _default_decomposition_builder(config)
     _load_holstein_builders()
     builder = Base.invokelatest(getfield, @__MODULE__, :decompose_brownian_bcf)

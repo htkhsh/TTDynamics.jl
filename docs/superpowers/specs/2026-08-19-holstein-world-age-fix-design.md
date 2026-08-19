@@ -15,6 +15,9 @@ up `decompose_brownian_bcf` and `build_holstein_heomtt` dynamically from the
 current module in the latest world, then invoke each with `Base.invokelatest`.
 This applies the world-age boundary only to the two functions that may have
 just been defined.
+Anchor the lazy include to the source directory with
+`include(joinpath(@__DIR__, "..", "holstein", "holstein_brownian_heomtt.jl"))`
+so builder loading does not depend on the process working directory.
 Injected builders used by tests and callers remain unchanged.
 
 ## Error Handling
