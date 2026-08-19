@@ -671,29 +671,34 @@ end
         main_plot_calls = Any[]
         main_plotter = (path, result) -> begin
             push!(main_plot_calls, (path, result))
-            write(path, "main synthetic png")
+            write(path, "main synthetic png $(length(main_plot_calls))")
             path
         end
-        main_result = equilibrate_main(
-            config;
-            equilibration_time_fs=config.time_step_fs,
-            output_directory=directory,
-            decomposition_builder=_ -> decomposition,
-            problem_builder=(_, _) -> problem,
-            equilibration_runner=(args...; kwargs...) -> result,
-            plotter=main_plotter,
-        )
+        run_main() = equilibrate_main(
+                config;
+                equilibration_time_fs=config.time_step_fs,
+                output_directory=directory,
+                decomposition_builder=_ -> decomposition,
+                problem_builder=(_, _) -> problem,
+                equilibration_runner=(args...; kwargs...) -> result,
+                plotter=main_plotter,
+            )
+        main_result = run_main()
+        replaced_result = run_main()
         @test isfile(main_result.state_path)
         @test isfile(main_result.metadata_path)
         @test isfile(main_result.csv_path)
         @test isfile(main_result.png_path)
-        @test only(main_plot_calls)[2] === result
+        @test replaced_result.png_path == main_result.png_path
+        @test length(main_plot_calls) == 2
+        @test all(call[2] === result for call in main_plot_calls)
+        @test read(main_result.png_path, String) == "main synthetic png 2"
     end
 end
 
 @testset "Holstein reloaded current correlation" begin
     fixture = equilibration_fixture()
-    (; config, problem, state) = fixture
+    (; config, decomposition, problem, state) = fixture
     operators = build_current_heom_operators(config, problem)
 
     result = run_current_correlation(
@@ -821,6 +826,48 @@ end
         @test !ispath(paths.csv_path)
         @test !ispath(paths.png_path)
         @test read(paths.rank_png_path, String) == "existing rank png"
+    end
+
+    mktempdir() do directory
+        paths = _current_correlation_output_paths(directory)
+        save_tt_binary(paths.state_path, state)
+        metadata = equilibrium_metadata(
+            config,
+            decomposition,
+            problem,
+            state;
+            equilibration_time_fs=1000.0,
+        )
+        write_equilibrium_metadata(paths.metadata_path, metadata)
+        main_result = (; synthetic_result..., state)
+        correlation_plot_calls = Ref(0)
+        rank_plot_calls = Ref(0)
+        correlation_plotter = (path, _) -> begin
+            correlation_plot_calls[] += 1
+            write(path, "correlation $(correlation_plot_calls[])")
+        end
+        rank_plotter = (path, _) -> begin
+            rank_plot_calls[] += 1
+            write(path, "ranks $(rank_plot_calls[])")
+        end
+        run_main() = current_correlation_main(
+                config;
+                correlation_time_fs=0.0,
+                output_directory=directory,
+                decomposition_builder=_ -> decomposition,
+                problem_builder=(_, _) -> problem,
+                correlation_runner=(args...; kwargs...) -> main_result,
+                plotter=correlation_plotter,
+                rank_plotter,
+                progress_io=IOBuffer(),
+            )
+        first = run_main()
+        second = run_main()
+        @test second.csv_path == first.csv_path
+        @test correlation_plot_calls[] == 2
+        @test rank_plot_calls[] == 2
+        @test read(paths.png_path, String) == "correlation 2"
+        @test read(paths.rank_png_path, String) == "ranks 2"
     end
 
     mktempdir() do directory

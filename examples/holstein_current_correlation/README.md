@@ -75,10 +75,13 @@ step. Each line includes the physical time, maximum and mean TT rank, and
 elapsed wall-clock time. The complete loaded-equilibrium and final-source TT
 rank vectors are also printed.
 
-All writers refuse to replace an existing output by default. Programmatic use
-can pass `overwrite=true` to `equilibrate_main` or `current_correlation_main`;
-use a fresh output directory for production replacement runs, since a later
-write failure cannot restore a file already replaced.
+Direct execution replaces existing example outputs by default, so repeated
+runs refresh the CSV, TT/TOML, and PNG files. Programmatic use can pass
+`overwrite=false` to `equilibrate_main` or `current_correlation_main` to request
+no-clobber checks. Low-level writer functions remain no-clobber by default.
+Use a fresh output directory when transactional recovery of every previous
+file is required, since a later write failure cannot restore a file already
+replaced.
 
 To import both executables without propagating or writing outputs:
 

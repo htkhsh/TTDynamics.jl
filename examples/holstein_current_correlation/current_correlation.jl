@@ -116,7 +116,7 @@ end
     current_correlation_main(config=DEFAULT_CONFIG;
                              correlation_time_fs=DEFAULT_CORRELATION_TIME_FS,
                              output_directory=DEFAULT_CURRENT_CORRELATION_OUTPUT_DIRECTORY,
-                             overwrite=false) -> NamedTuple
+                             overwrite=true) -> NamedTuple
 
 Reload a validated fixed-time equilibrium state and calculate the
 unsymmetrized current correlation for 200 fs by default.
@@ -124,7 +124,7 @@ unsymmetrized current correlation for 200 fs by default.
 function current_correlation_main(config=DEFAULT_CONFIG;
                                   correlation_time_fs::Real=DEFAULT_CORRELATION_TIME_FS,
                                   output_directory::AbstractString=DEFAULT_CURRENT_CORRELATION_OUTPUT_DIRECTORY,
-                                  overwrite::Bool=false,
+                                  overwrite::Bool=true,
                                   decomposition_builder=_default_decomposition_builder,
                                   problem_builder=_default_problem_builder,
                                   correlation_runner=run_current_correlation,

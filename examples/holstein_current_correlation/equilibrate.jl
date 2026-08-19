@@ -157,7 +157,7 @@ end
     equilibrate_main(config=DEFAULT_CONFIG;
                      equilibration_time_fs=DEFAULT_EQUILIBRATION_TIME_FS,
                      output_directory=DEFAULT_EQUILIBRATION_OUTPUT_DIRECTORY,
-                     overwrite=false) -> NamedTuple
+                     overwrite=true) -> NamedTuple
 
 Build the default Holstein HEOM problem, equilibrate it for 1000 fs by
 default, and save a binary state with matching TOML and CSV diagnostics plus
@@ -166,7 +166,7 @@ an automatic site-population PNG.
 function equilibrate_main(config=DEFAULT_CONFIG;
                           equilibration_time_fs::Real=DEFAULT_EQUILIBRATION_TIME_FS,
                           output_directory::AbstractString=DEFAULT_EQUILIBRATION_OUTPUT_DIRECTORY,
-                          overwrite::Bool=false,
+                          overwrite::Bool=true,
                           decomposition_builder=_default_decomposition_builder,
                           problem_builder=_default_problem_builder,
                           equilibration_runner=run_equilibration,
