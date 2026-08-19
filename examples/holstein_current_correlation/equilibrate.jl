@@ -1,5 +1,4 @@
 using TTDynamics
-using CairoMakie
 
 if !isdefined(@__MODULE__, :HolsteinConfig)
     include("../holstein/utils.jl")
@@ -32,6 +31,19 @@ function _default_problem_builder(config, decomposition)
     return Base.invokelatest(builder, config, decomposition)
 end
 
+function _load_equilibration_plotter()
+    if !isdefined(@__MODULE__, :_save_equilibration_population_plot)
+        include(joinpath(@__DIR__, "plotting.jl"))
+    end
+    return nothing
+end
+
+function _default_equilibration_plotter(path, result)
+    _load_equilibration_plotter()
+    plotter = Base.invokelatest(getfield, @__MODULE__, :_save_equilibration_population_plot)
+    return Base.invokelatest(plotter, path, result)
+end
+
 const DEFAULT_EQUILIBRATION_TIME_FS = 1000.0
 const DEFAULT_EQUILIBRATION_OUTPUT_DIRECTORY = joinpath(@__DIR__, "output")
 const DEFAULT_EQUILIBRATION_STATE_PATH = joinpath(
@@ -61,25 +73,6 @@ function _equilibration_output_paths(output_directory::AbstractString)
     )
 end
 
-function _save_equilibration_population_plot(path::AbstractString, result)::String
-    length(result.times) == size(result.populations, 2) ||
-        throw(ArgumentError("population column count must equal times length"))
-    figure = Figure(size=(900, 600))
-    axis = Axis(
-        figure[1, 1];
-        xlabel="Time (fs)",
-        ylabel="Population",
-        title="Holstein HEOM-TT equilibration populations",
-    )
-    for site in axes(result.populations, 1)
-        lines!(axis, result.times, result.populations[site, :];
-               linewidth=2, label="Site $site")
-    end
-    axislegend(axis; position=:rt)
-    save(String(path), figure)
-    return String(path)
-end
-
 """
     save_equilibration_outputs(config, decomposition, problem, result;
                                output_directory=DEFAULT_EQUILIBRATION_OUTPUT_DIRECTORY,
@@ -96,7 +89,7 @@ function save_equilibration_outputs(config::HolsteinConfig, decomposition, probl
                                     equilibration_time_fs::Real=DEFAULT_EQUILIBRATION_TIME_FS,
                                     overwrite::Bool=false,
                                     metadata_writer=write_equilibrium_metadata,
-                                    plotter=_save_equilibration_population_plot)::NamedTuple
+                                    plotter=_default_equilibration_plotter)::NamedTuple
     _equilibration_step_count(config, equilibration_time_fs)
     paths = _equilibration_output_paths(output_directory)
     if !overwrite
@@ -150,7 +143,7 @@ function equilibrate_main(config=DEFAULT_CONFIG;
                           decomposition_builder=_default_decomposition_builder,
                           problem_builder=_default_problem_builder,
                           equilibration_runner=run_equilibration,
-                          plotter=_save_equilibration_population_plot)::NamedTuple
+                          plotter=_default_equilibration_plotter)::NamedTuple
     validate_config(config)
     _equilibration_step_count(config, equilibration_time_fs)
     decomposition = decomposition_builder(config)

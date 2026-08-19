@@ -4,7 +4,7 @@
 
 **Goal:** Automatically save a site-population PNG whenever the Holstein current-correlation equilibration executable publishes its checkpoint outputs.
 
-**Architecture:** Keep CairoMakie presentation code in `equilibrate.jl` and consume the in-memory equilibration result. Generalize the existing atomic PNG publisher in the example utilities so both equilibration and current-correlation plots share the same no-clobber behavior, then treat the new PNG as part of the equilibration output set.
+**Architecture:** Keep CairoMakie presentation code in `plotting.jl` and consume the in-memory equilibration result. `equilibrate.jl` lazily includes that file only for its default plotter and uses latest-world binding lookup and invocation so package tests with injected plotters do not require CairoMakie. Generalize the existing atomic PNG publisher in the example utilities so both equilibration and current-correlation plots share the same no-clobber behavior, then treat the new PNG as part of the equilibration output set.
 
 **Tech Stack:** Julia 1.12, CairoMakie, Julia `Test`, TTDynamics HEOM-TT example utilities
 
@@ -25,13 +25,14 @@
 **Files:**
 - Modify: `examples/holstein_current_correlation/utils.jl:719-750`
 - Modify: `examples/holstein_current_correlation/equilibrate.jl`
+- Create: `examples/holstein_current_correlation/plotting.jl`
 - Modify: `examples/holstein_current_correlation/current_correlation.jl:85-95`
 - Modify: `examples/holstein_current_correlation/README.md:45-66`
 - Modify: `test/holstein_current_correlation.jl`
 
 **Interfaces:**
 - Consumes: `result.times`, `result.populations`, `_equilibrium_atomic_rename`, and CairoMakie `Figure`, `Axis`, `lines!`, `axislegend`, and `save`.
-- Produces: `_save_equilibration_population_plot(path, result) -> String`, `write_plot_png(path, result, plotter; overwrite=false) -> String`, and an added `png_path` field in `_equilibration_output_paths` and `equilibrate_main` results.
+- Produces: `_save_equilibration_population_plot(path, result) -> String` from `plotting.jl`, `_default_equilibration_plotter(path, result) -> String` with lazy latest-world resolution, `write_plot_png(path, result, plotter; overwrite=false) -> String`, and an added `png_path` field in `_equilibration_output_paths` and `equilibrate_main` results.
 
 - [ ] **Step 1: Write failing path and orchestration tests**
 
@@ -114,9 +115,9 @@ png_path = write_plot_png(paths.png_path, result, plotter; overwrite)
 
 Update existing tests to call `write_plot_png`; do not retain a redundant compatibility alias because this is example-internal API.
 
-- [ ] **Step 4: Add the CairoMakie population renderer**
+- [ ] **Step 4: Add the lazily loaded CairoMakie population renderer**
 
-At the top of `equilibrate.jl`, add `using CairoMakie`. Define:
+Create `plotting.jl` with `using CairoMakie` and define:
 
 ```julia
 function _save_equilibration_population_plot(path::AbstractString, result)::String
@@ -150,9 +151,12 @@ const DEFAULT_EQUILIBRATION_PNG_PATH = joinpath(
 )
 ```
 
-Return `png_path` from `_equilibration_output_paths`. Add
-`plotter=_save_equilibration_population_plot` to `save_equilibration_outputs`
-and `equilibrate_main`, forwarding it through both functions. Publish the plot
+Return `png_path` from `_equilibration_output_paths`. In `equilibrate.jl`, add
+`_default_equilibration_plotter` that `@__DIR__`-includes `plotting.jl` on
+demand and resolves/invokes `_save_equilibration_population_plot` with
+`Base.invokelatest`. Add `plotter=_default_equilibration_plotter` to
+`save_equilibration_outputs` and `equilibrate_main`, forwarding it through both
+functions. Publish the plot
 with:
 
 ```julia
@@ -208,6 +212,7 @@ reported as `Broken`. Verify the pre-existing user modifications under
 ```bash
 git add examples/holstein_current_correlation/utils.jl \
         examples/holstein_current_correlation/equilibrate.jl \
+        examples/holstein_current_correlation/plotting.jl \
         examples/holstein_current_correlation/current_correlation.jl \
         examples/holstein_current_correlation/README.md \
         test/holstein_current_correlation.jl

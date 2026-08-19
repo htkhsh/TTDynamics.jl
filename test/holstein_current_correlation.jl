@@ -11,6 +11,10 @@ end
 include("../examples/holstein_current_correlation/utils.jl")
 include("../examples/holstein_current_correlation/equilibrate.jl")
 
+@testset "Holstein equilibration plotting loads lazily" begin
+    @test !isdefined(@__MODULE__, :_save_equilibration_population_plot)
+end
+
 function current_correlation_problem(config)
     H = periodic_holstein_hamiltonian(config.site_energies_cm, config.hopping_cm) *
         KaisouEOM.icm2ifs
@@ -577,6 +581,12 @@ end
     end
 
     mktempdir() do directory
+        main_plot_calls = Any[]
+        main_plotter = (path, result) -> begin
+            push!(main_plot_calls, (path, result))
+            write(path, "main synthetic png")
+            path
+        end
         main_result = equilibrate_main(
             config;
             equilibration_time_fs=config.time_step_fs,
@@ -584,10 +594,13 @@ end
             decomposition_builder=_ -> decomposition,
             problem_builder=(_, _) -> problem,
             equilibration_runner=(args...; kwargs...) -> result,
+            plotter=main_plotter,
         )
         @test isfile(main_result.state_path)
         @test isfile(main_result.metadata_path)
         @test isfile(main_result.csv_path)
+        @test isfile(main_result.png_path)
+        @test only(main_plot_calls)[2] === result
     end
 end
 
