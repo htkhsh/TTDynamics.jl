@@ -73,6 +73,27 @@ function _equilibration_output_paths(output_directory::AbstractString)
     )
 end
 
+function _write_staged_equilibration_metadata(path::AbstractString, metadata, metadata_writer;
+                                              overwrite::Bool=false)::String
+    target = String(path)
+    !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
+    temporary_directory = mktempdir(dirname(abspath(target)))
+    temporary_path = joinpath(temporary_directory, basename(target))
+    try
+        metadata_writer(temporary_path, metadata; overwrite=false)
+        isfile(temporary_path) || throw(ArgumentError("metadata writer did not write a file"))
+        !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
+        if overwrite
+            _equilibrium_atomic_rename(temporary_path, target)
+        else
+            Base.Filesystem.hardlink(temporary_path, target)
+        end
+        return target
+    finally
+        rm(temporary_directory; recursive=true, force=true)
+    end
+end
+
 """
     save_equilibration_outputs(config, decomposition, problem, result;
                                output_directory=DEFAULT_EQUILIBRATION_OUTPUT_DIRECTORY,
@@ -112,7 +133,12 @@ function save_equilibration_outputs(config::HolsteinConfig, decomposition, probl
             result.state;
             equilibration_time_fs,
         )
-        metadata_path = metadata_writer(paths.metadata_path, metadata; overwrite)
+        metadata_path = _write_staged_equilibration_metadata(
+            paths.metadata_path,
+            metadata,
+            metadata_writer;
+            overwrite,
+        )
         push!(published_paths, metadata_path)
         png_path = write_plot_png(paths.png_path, result, plotter; overwrite)
         push!(published_paths, png_path)

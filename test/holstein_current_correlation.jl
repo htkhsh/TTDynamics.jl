@@ -528,6 +528,27 @@ end
         @test !ispath(paths.png_path)
     end
 
+    metadata_write_after_write_failure = (path, args...; kwargs...) -> begin
+        write(path, "partial metadata")
+        error("forced metadata publication failure after write")
+    end
+    mktempdir() do directory
+        paths = _equilibration_output_paths(directory)
+        @test_throws ErrorException save_equilibration_outputs(
+            config,
+            decomposition,
+            problem,
+            result;
+            output_directory=directory,
+            equilibration_time_fs=config.time_step_fs,
+            metadata_writer=metadata_write_after_write_failure,
+        )
+        @test !ispath(paths.csv_path)
+        @test !ispath(paths.state_path)
+        @test !ispath(paths.metadata_path)
+        @test !ispath(paths.png_path)
+    end
+
     mktempdir() do directory
         paths = _equilibration_output_paths(directory)
         write(paths.png_path, "existing png")
