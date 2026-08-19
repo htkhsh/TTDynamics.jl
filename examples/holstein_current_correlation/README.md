@@ -67,6 +67,13 @@ then propagates for 200 fs by default. It produces:
 
 - `output/holstein_current_correlation.csv`
 - `output/holstein_current_correlation.png`
+- `output/holstein_current_correlation_ranks.png`
+
+During propagation, the executable reports step 0, every
+`config.progress_interval` steps (10 fs with the defaults), and the final
+step. Each line includes the physical time, maximum and mean TT rank, and
+elapsed wall-clock time. The complete loaded-equilibrium and final-source TT
+rank vectors are also printed.
 
 All writers refuse to replace an existing output by default. Programmatic use
 can pass `overwrite=true` to `equilibrate_main` or `current_correlation_main`;
@@ -94,6 +101,8 @@ The CSV columns are time in fs, the real and imaginary parts of `C(t)` in
 fs^-2, and maximum/mean TT rank. The PNG shows the real and imaginary
 components with the same fs^-2 vertical units. `J rho_eq` is a current source,
 not a density matrix, so it is deliberately not trace-normalized.
+The separate rank PNG shows the maximum and mean TT rank at every saved time;
+these are the same rank diagnostics stored in the CSV.
 
 The saved input is a state equilibrated for a fixed 1000 fs, not a state
 automatically certified to be stationary. Before treating either result as a

@@ -10,9 +10,21 @@ if !isdefined(@__MODULE__, :HolsteinConfig)
 end
 include("../examples/holstein_current_correlation/utils.jl")
 include("../examples/holstein_current_correlation/equilibrate.jl")
+include("../examples/holstein_current_correlation/current_correlation.jl")
 
 @testset "Holstein equilibration plotting loads lazily" begin
     @test !isdefined(@__MODULE__, :_save_equilibration_population_plot)
+end
+
+@testset "Holstein current plotting loads lazily" begin
+    @test !isdefined(@__MODULE__, :_save_current_correlation_plot)
+    @test !isdefined(@__MODULE__, :_save_current_correlation_rank_plot)
+end
+
+@testset "Holstein current rank output path" begin
+    paths = _current_correlation_output_paths("diagnostics")
+    @test paths.rank_png_path ==
+          joinpath("diagnostics", "holstein_current_correlation_ranks.png")
 end
 
 function current_correlation_problem(config)
@@ -751,6 +763,64 @@ end
         @test rows[2] == "0.0,1.5,-2.0,2,1.5"
         @test rows[3] == "1.0,-3.0,4.25,3,2.0"
         @test_throws ArgumentError write_current_correlation_csv(path, synthetic_result)
+    end
+
+    mktempdir() do directory
+        paths = _current_correlation_output_paths(directory)
+        correlation_calls = Any[]
+        rank_calls = Any[]
+        correlation_plotter = (path, value) -> begin
+            push!(correlation_calls, value)
+            write(path, "correlation png")
+        end
+        rank_plotter = (path, value) -> begin
+            push!(rank_calls, value)
+            write(path, "rank png")
+        end
+        outputs = save_current_correlation_outputs(
+            paths,
+            synthetic_result;
+            correlation_plotter,
+            rank_plotter,
+        )
+        @test outputs.csv_path == paths.csv_path
+        @test outputs.png_path == paths.png_path
+        @test outputs.rank_png_path == paths.rank_png_path
+        @test only(correlation_calls) === synthetic_result
+        @test only(rank_calls) === synthetic_result
+        @test read(paths.png_path, String) == "correlation png"
+        @test read(paths.rank_png_path, String) == "rank png"
+    end
+
+    mktempdir() do directory
+        paths = _current_correlation_output_paths(directory)
+        failing_rank_plotter = (path, _) -> begin
+            write(path, "partial rank png")
+            error("injected rank plot failure")
+        end
+        @test_throws ErrorException save_current_correlation_outputs(
+            paths,
+            synthetic_result;
+            correlation_plotter=(path, _) -> write(path, "correlation png"),
+            rank_plotter=failing_rank_plotter,
+        )
+        @test !ispath(paths.csv_path)
+        @test !ispath(paths.png_path)
+        @test !ispath(paths.rank_png_path)
+    end
+
+    mktempdir() do directory
+        paths = _current_correlation_output_paths(directory)
+        write(paths.rank_png_path, "existing rank png")
+        @test_throws ArgumentError save_current_correlation_outputs(
+            paths,
+            synthetic_result;
+            correlation_plotter=(path, _) -> write(path, "correlation png"),
+            rank_plotter=(path, _) -> write(path, "rank png"),
+        )
+        @test !ispath(paths.csv_path)
+        @test !ispath(paths.png_path)
+        @test read(paths.rank_png_path, String) == "existing rank png"
     end
 
     mktempdir() do directory
