@@ -1,4 +1,5 @@
 using TTDynamics
+using CairoMakie
 
 if !isdefined(@__MODULE__, :HolsteinConfig)
     include("../holstein/utils.jl")
@@ -45,6 +46,10 @@ const DEFAULT_EQUILIBRATION_CSV_PATH = joinpath(
     DEFAULT_EQUILIBRATION_OUTPUT_DIRECTORY,
     "holstein_equilibration.csv",
 )
+const DEFAULT_EQUILIBRATION_PNG_PATH = joinpath(
+    DEFAULT_EQUILIBRATION_OUTPUT_DIRECTORY,
+    "holstein_equilibration_populations.png",
+)
 
 function _equilibration_output_paths(output_directory::AbstractString)
     directory = String(output_directory)
@@ -52,7 +57,27 @@ function _equilibration_output_paths(output_directory::AbstractString)
         state_path=joinpath(directory, basename(DEFAULT_EQUILIBRATION_STATE_PATH)),
         metadata_path=joinpath(directory, basename(DEFAULT_EQUILIBRATION_METADATA_PATH)),
         csv_path=joinpath(directory, basename(DEFAULT_EQUILIBRATION_CSV_PATH)),
+        png_path=joinpath(directory, basename(DEFAULT_EQUILIBRATION_PNG_PATH)),
     )
+end
+
+function _save_equilibration_population_plot(path::AbstractString, result)::String
+    length(result.times) == size(result.populations, 2) ||
+        throw(ArgumentError("population column count must equal times length"))
+    figure = Figure(size=(900, 600))
+    axis = Axis(
+        figure[1, 1];
+        xlabel="Time (fs)",
+        ylabel="Population",
+        title="Holstein HEOM-TT equilibration populations",
+    )
+    for site in axes(result.populations, 1)
+        lines!(axis, result.times, result.populations[site, :];
+               linewidth=2, label="Site $site")
+    end
+    axislegend(axis; position=:rt)
+    save(String(path), figure)
+    return String(path)
 end
 
 """
@@ -61,17 +86,17 @@ end
                                equilibration_time_fs=DEFAULT_EQUILIBRATION_TIME_FS,
                                overwrite=false) -> NamedTuple
 
-Publish equilibration diagnostics, a TT binary, and its matching metadata.
-For a non-overwrite save, a metadata failure removes the new binary so that an
-incomplete binary/metadata pair is not retained.  An overwrite save cannot
-restore a replaced binary; use a fresh output directory for production
-replacement runs.
+Publish equilibration diagnostics, a TT binary, matching metadata, and a
+population plot. For a non-overwrite save, a publication failure removes every
+newly written output. An overwrite save cannot restore replaced outputs; use a
+fresh output directory for production replacement runs.
 """
 function save_equilibration_outputs(config::HolsteinConfig, decomposition, problem, result;
                                     output_directory::AbstractString=DEFAULT_EQUILIBRATION_OUTPUT_DIRECTORY,
                                     equilibration_time_fs::Real=DEFAULT_EQUILIBRATION_TIME_FS,
                                     overwrite::Bool=false,
-                                    metadata_writer=write_equilibrium_metadata)::NamedTuple
+                                    metadata_writer=write_equilibrium_metadata,
+                                    plotter=_save_equilibration_population_plot)::NamedTuple
     _equilibration_step_count(config, equilibration_time_fs)
     paths = _equilibration_output_paths(output_directory)
     if !overwrite
@@ -81,11 +106,12 @@ function save_equilibration_outputs(config::HolsteinConfig, decomposition, probl
     end
 
     mkpath(String(output_directory))
-    csv_path = write_equilibration_csv(paths.csv_path, result; overwrite)
-    binary_saved = false
+    published_paths = String[]
     try
+        csv_path = write_equilibration_csv(paths.csv_path, result; overwrite)
+        push!(published_paths, csv_path)
         state_path = save_tt_binary(paths.state_path, result.state; overwrite)
-        binary_saved = true
+        push!(published_paths, state_path)
         metadata = equilibrium_metadata(
             config,
             decomposition,
@@ -94,10 +120,15 @@ function save_equilibration_outputs(config::HolsteinConfig, decomposition, probl
             equilibration_time_fs,
         )
         metadata_path = metadata_writer(paths.metadata_path, metadata; overwrite)
-        return (; state_path, metadata_path, csv_path)
+        push!(published_paths, metadata_path)
+        png_path = write_plot_png(paths.png_path, result, plotter; overwrite)
+        push!(published_paths, png_path)
+        return (; state_path, metadata_path, csv_path, png_path)
     catch
-        if binary_saved && !overwrite
-            rm(paths.state_path; force=true)
+        if !overwrite
+            for path in reverse(published_paths)
+                rm(path; force=true)
+            end
         end
         rethrow()
     end
@@ -118,7 +149,8 @@ function equilibrate_main(config=DEFAULT_CONFIG;
                           overwrite::Bool=false,
                           decomposition_builder=_default_decomposition_builder,
                           problem_builder=_default_problem_builder,
-                          equilibration_runner=run_equilibration)::NamedTuple
+                          equilibration_runner=run_equilibration,
+                          plotter=_save_equilibration_population_plot)::NamedTuple
     validate_config(config)
     _equilibration_step_count(config, equilibration_time_fs)
     decomposition = decomposition_builder(config)
@@ -136,6 +168,7 @@ function equilibrate_main(config=DEFAULT_CONFIG;
         output_directory,
         equilibration_time_fs,
         overwrite,
+        plotter,
     )
     trace_drift = maximum(abs.(result.trace .- 1.0))
     saved_trace = tt_dot(problem.trace_observable, result.state)
@@ -145,6 +178,7 @@ function equilibrate_main(config=DEFAULT_CONFIG;
     println("  Wrote: $(paths.csv_path)")
     println("  Wrote: $(paths.state_path)")
     println("  Wrote: $(paths.metadata_path)")
+    println("  Wrote: $(paths.png_path)")
     return (; result, decomposition, problem, paths...)
 end
 

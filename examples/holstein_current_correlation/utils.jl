@@ -720,13 +720,13 @@ function write_current_correlation_csv(path::AbstractString, result;
 end
 
 """
-    write_current_correlation_png(path, result, plotter; overwrite=false) -> String
+    write_plot_png(path, result, plotter; overwrite=false) -> String
 
-Render a correlation plot to a sibling temporary PNG, then publish it without
+Render a plot to a sibling temporary PNG, then publish it without
 clobbering an existing target unless replacement is explicitly requested.
 """
-function write_current_correlation_png(path::AbstractString, result, plotter;
-                                       overwrite::Bool=false)::String
+function write_plot_png(path::AbstractString, result, plotter;
+                        overwrite::Bool=false)::String
     target = String(path)
     !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
     temporary_path = nothing

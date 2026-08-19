@@ -55,6 +55,10 @@ Equilibration propagates for 1000 fs by default and produces:
 - `output/holstein_equilibration.csv`
 - `output/holstein_equilibrium.ttbin`
 - `output/holstein_equilibrium_metadata.toml`
+- `output/holstein_equilibration_populations.png`
+
+The PNG plots each site's population against time and is generated automatically
+by `equilibrate.jl`.
 
 The correlation executable requires the latter binary/TOML pair, reconstructs
 the decomposition and HEOM problem, validates the state layout, every saved

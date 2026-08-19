@@ -465,6 +465,12 @@ end
     )
 
     mktempdir() do directory
+        plot_calls = Any[]
+        plotter = (path, result) -> begin
+            push!(plot_calls, (path, result))
+            write(path, "synthetic png")
+            path
+        end
         outputs = save_equilibration_outputs(
             config,
             decomposition,
@@ -472,11 +478,15 @@ end
             result;
             output_directory=directory,
             equilibration_time_fs=config.time_step_fs,
+            plotter,
         )
         @test isfile(outputs.state_path)
         @test isfile(outputs.metadata_path)
         @test isfile(outputs.csv_path)
+        @test isfile(outputs.png_path)
+        @test only(plot_calls)[2] === result
         @test basename(outputs.metadata_path) == "holstein_equilibrium_metadata.toml"
+        @test basename(outputs.png_path) == "holstein_equilibration_populations.png"
         @test_throws ArgumentError write_equilibration_csv(outputs.csv_path, result)
         restored = load_tt_binary(outputs.state_path)
         @test validate_equilibrium_state(
@@ -508,9 +518,45 @@ end
             equilibration_time_fs=config.time_step_fs,
             metadata_writer=metadata_write_failure,
         )
-        @test isfile(paths.csv_path)
+        @test !ispath(paths.csv_path)
         @test !ispath(paths.state_path)
         @test !ispath(paths.metadata_path)
+        @test !ispath(paths.png_path)
+    end
+
+    mktempdir() do directory
+        paths = _equilibration_output_paths(directory)
+        write(paths.png_path, "existing png")
+        @test_throws ArgumentError save_equilibration_outputs(
+            config,
+            decomposition,
+            problem,
+            result;
+            output_directory=directory,
+            equilibration_time_fs=config.time_step_fs,
+        )
+        @test read(paths.png_path, String) == "existing png"
+    end
+
+    plotting_failure = (path, _) -> begin
+        write(path, "partial png")
+        error("forced plotting failure")
+    end
+    mktempdir() do directory
+        paths = _equilibration_output_paths(directory)
+        @test_throws ErrorException save_equilibration_outputs(
+            config,
+            decomposition,
+            problem,
+            result;
+            output_directory=directory,
+            equilibration_time_fs=config.time_step_fs,
+            plotter=plotting_failure,
+        )
+        @test !ispath(paths.csv_path)
+        @test !ispath(paths.state_path)
+        @test !ispath(paths.metadata_path)
+        @test !ispath(paths.png_path)
     end
 
     mktempdir() do directory
@@ -589,19 +635,19 @@ end
         target = joinpath(directory, "current_correlation.png")
         result = (times=[0.0], correlation=ComplexF64[1.0 + 2.0im])
         writer = (path, _) -> write(path, "first png")
-        @test write_current_correlation_png(target, result, writer) == target
+        @test write_plot_png(target, result, writer) == target
         @test read(target, String) == "first png"
-        @test_throws ArgumentError write_current_correlation_png(target, result, writer)
+        @test_throws ArgumentError write_plot_png(target, result, writer)
 
         rm(target)
         racing_writer = (path, _) -> begin
             write(target, "concurrent png")
             write(path, "temporary png")
         end
-        @test_throws ArgumentError write_current_correlation_png(target, result, racing_writer)
+        @test_throws ArgumentError write_plot_png(target, result, racing_writer)
         @test read(target, String) == "concurrent png"
         replacing_writer = (path, _) -> write(path, "replacement png")
-        @test write_current_correlation_png(
+        @test write_plot_png(
             target,
             result,
             replacing_writer;
