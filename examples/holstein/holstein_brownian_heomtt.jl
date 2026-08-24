@@ -3,8 +3,8 @@ using Statistics
 using TTSolver
 using TTDynamics
 using QFiND
-using KaisouEOM
-using KaisouEOM: icm2ifs
+using HEOMKit
+using HEOMKit: icm2ifs
 using CairoMakie
 
 if !isdefined(@__MODULE__, :HolsteinConfig)

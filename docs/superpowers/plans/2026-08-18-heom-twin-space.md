@@ -6,7 +6,7 @@
 
 **Architecture:** `src/heom.jl` builds every Hamiltonian, decay, upward, and downward HEOM term directly from local ket, bra, and hierarchy factors. Public builders retain their signatures but return `[N,N,nb...]` tensors/operators; new dimension and root-density helpers provide canonical validation and diagnostics.
 
-**Tech Stack:** Julia 1.11+, TTDynamics, TTSolver `TTTensor`/`TTMatrix`, KaisouEOM `NoiseExp`/`BathExp`, LinearAlgebra, Test.
+**Tech Stack:** Julia 1.11+, TTDynamics, TTSolver `TTTensor`/`TTMatrix`, HEOMKit `NoiseExp`/`BathExp`, LinearAlgebra, Test.
 
 ## Global Constraints
 
@@ -60,7 +60,7 @@ using LinearAlgebra
 using Test
 using TTDynamics
 using TTSolver
-using KaisouEOM
+using HEOMKit
 
 function twin_test_system(; nb=2)
     H = ComplexF64[0.3 0.7 + 0.2im; 0.7 - 0.2im -0.4]

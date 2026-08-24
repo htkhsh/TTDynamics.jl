@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a standalone thermofield KSL example for the existing Ohmic spin-boson model and compare its populations with a KaisouEOM HEOM reference.
+**Goal:** Add a standalone thermofield KSL example for the existing Ohmic spin-boson model and compare its populations with a HEOMKit HEOM reference.
 
 **Architecture:** Put reusable example-level TT rank and population operations in `examples/tfd/ksl/utils.jl`, covered by lightweight package tests. Build a separate executable `examples/tfd/ksl/sb_ohmic.jl` that reproduces the existing Ohmic/QFiND/ESPRIT/HEOM setup, constructs the same TFD Hamiltonian, pads the localized state to an admissible rank profile capped at 30, and advances it with symmetric KSL.
 
-**Tech Stack:** Julia 1.11+, TTDynamics, TTSolver, QFiND, KaisouEOM, ExpFit, CairoMakie, DelimitedFiles.
+**Tech Stack:** Julia 1.11+, TTDynamics, TTSolver, QFiND, HEOMKit, ExpFit, CairoMakie, DelimitedFiles.
 
 ## Global Constraints
 
@@ -267,8 +267,8 @@ using DelimitedFiles
 using TTSolver
 using TTDynamics
 using QFiND
-using KaisouEOM
-using KaisouEOM: icm2ifs
+using HEOMKit
+using HEOMKit: icm2ifs
 using ExpFit
 using CairoMakie
 

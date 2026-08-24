@@ -4,7 +4,7 @@
 
 Add a standalone example that evolves the existing thermofield spin-boson
 Ohmic model with TTSolver's homogeneous KSL integrator and compares its system
-populations against a KaisouEOM HEOM reference.
+populations against a HEOMKit HEOM reference.
 
 ## Files
 

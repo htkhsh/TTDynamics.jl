@@ -6,7 +6,7 @@
 
 **Architecture:** Keep physical and numerical controls in the lightweight `HolsteinConfig`, replacing ESPRIT-specific fields with TPSD and diagnostic-grid fields. Let QFiND `tpsd` produce HEOM decay rates and coefficients directly in femtosecond units; retain numerical `BosonicBCF` sampling only as a reported validation diagnostic.
 
-**Tech Stack:** Julia 1.11, TTDynamics, TTSolver, KaisouEOM, QFiND, CairoMakie, LinearAlgebra, Statistics, Test.
+**Tech Stack:** Julia 1.11, TTDynamics, TTSolver, HEOMKit, QFiND, CairoMakie, LinearAlgebra, Statistics, Test.
 
 ## Global Constraints
 

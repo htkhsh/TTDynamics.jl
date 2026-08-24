@@ -1,7 +1,7 @@
 using TTDynamics
 using TTSolver
 using Test
-using KaisouEOM
+using HEOMKit
 
 @testset "TTDynamics.jl" begin
     # Write your tests here.

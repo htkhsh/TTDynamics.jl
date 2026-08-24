@@ -12,7 +12,7 @@ end
 using .TOML
 using TTDynamics
 using TTSolver
-using KaisouEOM: icm2ifs
+using HEOMKit: icm2ifs
 
 const _EQUILIBRIUM_METADATA_IDENTIFIER = "TTDynamics.HolsteinEquilibrium"
 const _EQUILIBRIUM_METADATA_VERSION = 1

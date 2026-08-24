@@ -6,7 +6,7 @@
 
 **Architecture:** `examples/holstein_current_correlation/` contains two guarded executables plus focused shared utilities. It includes the existing Brownian Holstein example to reuse `HolsteinConfig`, QFiND TPSD decomposition, and HEOM construction, while its own helpers own state-returning propagation, exact factorized twin-space current operators, metadata validation, and output formatting.
 
-**Tech Stack:** Julia 1.11+, TTDynamics/TTSolver, KaisouEOM, QFiND TPSD, TOML stdlib, CairoMakie, `Test`; TTDynamics versioned TT binary I/O.
+**Tech Stack:** Julia 1.11+, TTDynamics/TTSolver, HEOMKit, QFiND TPSD, TOML stdlib, CairoMakie, `Test`; TTDynamics versioned TT binary I/O.
 
 ## Global Constraints
 
@@ -56,7 +56,7 @@
 - [ ] **Step 1: Write failing current-operator tests**
 
 Create `test/holstein_current_correlation.jl`, import `LinearAlgebra`,
-`Statistics`, `TTDynamics`, `TTSolver`, `KaisouEOM`, and `Test`, include
+`Statistics`, `TTDynamics`, `TTSolver`, `HEOMKit`, and `Test`, include
 `examples/holstein/utils.jl` for `HolsteinConfig`, then include the new utility
 file. Do not include the existing executable here because QFiND and CairoMakie
 belong only to the example environment. Add:
@@ -70,7 +70,7 @@ belong only to the example environment. Add:
         final_time_fs=1.0,
     )
     current = periodic_current_operator(config)
-    scale = config.hopping_cm * KaisouEOM.icm2ifs
+    scale = config.hopping_cm * HEOMKit.icm2ifs
 
     @test ishermitian(current)
     @test current[2, 1] == 1im * scale
@@ -479,7 +479,7 @@ the current-source state because it is not a density matrix.
 - [ ] **Step 5: Add the standalone example environment**
 
 Create `Project.toml` with the same UUIDs and compatibility ranges as the
-existing Holstein example for `CairoMakie`, `KaisouEOM`, `LinearAlgebra`,
+existing Holstein example for `CairoMakie`, `HEOMKit`, `LinearAlgebra`,
 `QFiND`, `Statistics`, `TTDynamics`, and `TTSolver`, plus stdlib TOML UUID
 `fa267f1f-6049-4f14-aa54-33bafae1ed76` and compatibility matching Julia 1.11.
 Do not add a root dependency.

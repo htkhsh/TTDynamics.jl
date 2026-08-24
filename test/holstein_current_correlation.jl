@@ -3,7 +3,7 @@ using Statistics
 using Test
 using TTDynamics
 using TTSolver
-using KaisouEOM
+using HEOMKit
 
 if !isdefined(@__MODULE__, :HolsteinConfig)
     include("../examples/holstein/utils.jl")
@@ -29,7 +29,7 @@ end
 
 function current_correlation_problem(config)
     H = periodic_holstein_hamiltonian(config.site_energies_cm, config.hopping_cm) *
-        KaisouEOM.icm2ifs
+        HEOMKit.icm2ifs
     baths = [
         BathExp(ComplexF64[0.4], ComplexF64[0.03 - 0.02im], projector)
         for projector in site_projectors(config.site_count)
@@ -124,7 +124,7 @@ end
         final_time_fs=1.0,
     )
     current = periodic_current_operator(config)
-    scale = config.hopping_cm * KaisouEOM.icm2ifs
+    scale = config.hopping_cm * HEOMKit.icm2ifs
 
     @test ishermitian(current)
     @test current[2, 1] == 1im * scale

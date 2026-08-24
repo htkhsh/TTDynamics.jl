@@ -17,7 +17,7 @@ using Pkg
 Pkg.add([
     Pkg.PackageSpec(url="https://github.com/htkhsh/TTDynamics.jl.git", rev="0722677b16c526c0e58aa8c4c25bcc0e218f6e9b"),
     Pkg.PackageSpec(url="https://github.com/htkhsh/TTSolver.jl.git", rev="7a2eb169648257b9619c14bab349d63798bd220a"),
-    Pkg.PackageSpec(url="https://github.com/DOC-Package/KaisouEOM.jl.git", rev="06f7939557bce802ea967b6028e9899f55a120dd"),
+    Pkg.PackageSpec(url="https://github.com/DOC-Package/HEOMKit.jl.git", rev="06f7939557bce802ea967b6028e9899f55a120dd"),
     Pkg.PackageSpec(url="https://github.com/DOC-Package/QFiND.jl.git", rev="e5d1186cb2f07195c8dd07429861cbe898c9b4da"),
 ])
 Pkg.instantiate()
@@ -30,7 +30,7 @@ or a linked Git worktree:
 
 ```bash
 DEV_ROOT="$(dirname "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")")"
-julia --project=examples/holstein_current_correlation -e 'using Pkg; Pkg.develop([Pkg.PackageSpec(path=path) for path in ARGS]); Pkg.instantiate()' "$PWD" "$DEV_ROOT/TTSolver" "$DEV_ROOT/KaisouEOM" "$DEV_ROOT/QFiND"
+julia --project=examples/holstein_current_correlation -e 'using Pkg; Pkg.develop([Pkg.PackageSpec(path=path) for path in ARGS]); Pkg.instantiate()' "$PWD" "$DEV_ROOT/TTSolver" "$DEV_ROOT/HEOMKit" "$DEV_ROOT/QFiND"
 ```
 
 Both commands create an environment-local `Manifest.toml`; it is ignored and

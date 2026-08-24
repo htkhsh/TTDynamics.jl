@@ -1,14 +1,14 @@
-# HEOM-TT Alignment with KaisouEOM Conjugate Modes
+# HEOM-TT Alignment with HEOMKit Conjugate Modes
 
 ## Objective
 
 Make the HEOM-TT Liouvillian in `TTDynamics` reproduce the exponential-mode
-semantics and Liouvillian action of `KaisouEOM`. In particular, exponential
+semantics and Liouvillian action of `HEOMKit`. In particular, exponential
 terms whose decay exponents form a complex-conjugate pair must use the
 pair-aware `c1`, `c2`, and `abs_coeff` values produced by
-`KaisouEOM.NoiseExp`.
+`HEOMKit.NoiseExp`.
 
-This work treats `KaisouEOM` as the reference implementation. It does not
+This work treats `HEOMKit` as the reference implementation. It does not
 reinterpret or replace its conjugate-pair transformation.
 
 ## Scope
@@ -19,12 +19,12 @@ they make the mapping auditable.
 
 The following are out of scope:
 
-- changing `KaisouEOM.BathExp` or `KaisouEOM.NoiseExp`;
+- changing `HEOMKit.BathExp` or `HEOMKit.NoiseExp`;
 - changing QFiND TPSD or the Brownian spectral density;
 - changing the Holstein Hamiltonian, current operator, physical parameters,
   equilibrium preparation, or output formats;
 - changing the tensor layout `[ket, bra, hierarchy...]`;
-- replacing the rectangular TT hierarchy with KaisouEOM's total-depth sparse
+- replacing the rectangular TT hierarchy with HEOMKit's total-depth sparse
   hierarchy.
 
 ## Reference Semantics
@@ -40,7 +40,7 @@ the resulting hierarchy modes are not reconstructed independently in
 `TTDynamics`; their `gamma`, `c1`, `c2`, and `abs_coeff` values are consumed
 exactly as provided by `NoiseExp`.
 
-For hierarchy occupation \(n_k\), KaisouEOM uses
+For hierarchy occupation \(n_k\), HEOMKit uses
 
 \[
 \begin{aligned}
@@ -82,7 +82,7 @@ complex modes, sorting, and mode count.
 ### Auditable local factors
 
 The HEOM-TT builder will express the four contributions using the same
-quantities and names as KaisouEOM:
+quantities and names as HEOMKit:
 
 - damping from `gamma` and the hierarchy number operator;
 - forward/upward connection from `sqrt(abs_coeff)` and the lowering shift in
@@ -101,14 +101,14 @@ argument error.
 TTDynamics retains a Cartesian hierarchy with local occupation
 `0:(nb[k]-1)`. Connections leaving that box are zero. Reference comparisons
 will use the same Cartesian basis and boundary, rather than conflating this
-representation choice with KaisouEOM's total-depth hierarchy enumeration.
+representation choice with HEOMKit's total-depth hierarchy enumeration.
 
 ## Verification
 
 Tests will construct small systems and compare the dense expansion of the TT
 Liouvillian against a direct Cartesian implementation of the equations above.
 The direct implementation will obtain all mode data from a real
-`KaisouEOM.NoiseExp` object.
+`HEOMKit.NoiseExp` object.
 
 Required fixtures are:
 
@@ -135,8 +135,8 @@ artifact is not part of the automated test suite.
 ## Success Criteria
 
 - Complex-conjugate modes receive exactly the special treatment defined by
-  `KaisouEOM.NoiseExp`.
-- The TT Liouvillian agrees numerically with the KaisouEOM equations for every
+  `HEOMKit.NoiseExp`.
+- The TT Liouvillian agrees numerically with the HEOMKit equations for every
   required fixture and Cartesian hierarchy state.
 - Existing twin-space extraction, observables, binary I/O, and Holstein tests
   remain passing.

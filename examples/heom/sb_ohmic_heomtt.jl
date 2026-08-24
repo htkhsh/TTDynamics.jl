@@ -1,7 +1,7 @@
 # Spin-Boson model with Ohmic bath: HEOM-TT vs standard HEOM comparison
 #
 # This example demonstrates:
-# 1. HEOM (Hierarchical Equations of Motion) using KaisouEOM
+# 1. HEOM (Hierarchical Equations of Motion) using HEOMKit
 # 2. HEOM-TT: HEOM equations solved in Tensor-Train format using tAMEn
 #
 # Reference: Borrelli, Gelin, Chem. Phys. 481 (2016) 91-98
@@ -15,8 +15,8 @@ using Statistics
 using TTSolver
 using TTDynamics
 using QFiND
-using KaisouEOM
-using KaisouEOM: icm2ifs, kB
+using HEOMKit
+using HEOMKit: icm2ifs, kB
 using ExpFit
 using CairoMakie
 
@@ -85,10 +85,10 @@ fit_error = norm(bcf_fit .- bcf_samples) / norm(bcf_samples)
 println("  ESPRIT fitting error: $(round(fit_error, sigdigits=3))")
 
 # =============================================
-# 3. Standard HEOM using KaisouEOM (reference)
+# 3. Standard HEOM using HEOMKit (reference)
 # =============================================
 println("\n" * "=" ^ 60)
-println("Standard HEOM: Running with KaisouEOM...")
+println("Standard HEOM: Running with HEOMKit...")
 println("=" ^ 60)
 
 # System Hamiltonian in fs⁻¹ units
@@ -125,7 +125,7 @@ tol = 1e-3       # TT tolerance
 dt_tt = 1.0      # Time step [fs]
 Nsteps = Int(t_end / dt_tt)
 
-# Build HEOMTTSystem using NoiseExp (already constructed for KaisouEOM HEOM)
+# Build HEOMTTSystem using NoiseExp (already constructed for HEOMKit HEOM)
 params = HEOMTTSystem(H_sys, noise, Nh)
 tt_dimensions = heom_tt_dimensions(params)
 println("  HEOM-TT mode dimensions [ket, bra, hierarchy...]: $tt_dimensions")

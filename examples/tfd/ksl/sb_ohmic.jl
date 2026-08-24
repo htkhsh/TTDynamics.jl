@@ -3,8 +3,8 @@ using DelimitedFiles
 using TTSolver
 using TTDynamics
 using QFiND
-using KaisouEOM
-using KaisouEOM: icm2ifs
+using HEOMKit
+using HEOMKit: icm2ifs
 using ExpFit
 using CairoMakie
 

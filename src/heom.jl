@@ -1,7 +1,7 @@
 """
     HEOMTTSystem
 
-HEOM-TT system defined using NoiseExp from KaisouEOM.
+HEOM-TT system defined using NoiseExp from HEOMKit.
 
 # Fields
 - `H_sys`: System Hamiltonian

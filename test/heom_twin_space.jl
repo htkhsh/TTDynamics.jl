@@ -2,7 +2,7 @@ using LinearAlgebra
 using Test
 using TTDynamics
 using TTSolver
-using KaisouEOM
+using HEOMKit
 
 function twin_test_system(; nb=2)
     H = ComplexF64[0.3 0.7 + 0.2im; 0.7 - 0.2im -0.4]

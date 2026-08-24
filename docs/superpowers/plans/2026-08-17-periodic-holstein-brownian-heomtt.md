@@ -6,7 +6,7 @@
 
 **Architecture:** Keep model/configuration helpers in `examples/holstein/utils.jl`, where they can be tested without loading plotting or fitting packages. Put Brownian BCF fitting, HEOM-TT construction, tAMEn propagation, reporting, and output in `examples/holstein/holstein_brownian_heomtt.jl`, with a guarded `main()` entry point.
 
-**Tech Stack:** Julia 1.11, TTDynamics, TTSolver, KaisouEOM, QFiND, ExpFit, CairoMakie, LinearAlgebra, Statistics, Test.
+**Tech Stack:** Julia 1.11, TTDynamics, TTSolver, HEOMKit, QFiND, ExpFit, CairoMakie, LinearAlgebra, Statistics, Test.
 
 ## Global Constraints
 
@@ -249,7 +249,7 @@ git commit -m "feat: add periodic Holstein model utilities"
 Append:
 
 ```julia
-using KaisouEOM
+using HEOMKit
 
 @testset "Holstein multi-bath HEOM-TT initial state" begin
     projectors = site_projectors(2)
@@ -306,8 +306,8 @@ using TTSolver
 using TTDynamics
 using QFiND
 using ExpFit
-using KaisouEOM
-using KaisouEOM: icm2ifs
+using HEOMKit
+using HEOMKit: icm2ifs
 using CairoMakie
 
 include("utils.jl")

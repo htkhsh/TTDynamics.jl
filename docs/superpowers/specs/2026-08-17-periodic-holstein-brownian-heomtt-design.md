@@ -146,7 +146,7 @@ three.
 ## Example Environment
 
 The executable uses its own Julia project, which directly declares TTDynamics,
-TTSolver, KaisouEOM, QFiND, CairoMakie, and the imported standard
+TTSolver, HEOMKit, QFiND, CairoMakie, and the imported standard
 libraries. The README supplies exact URL/revision setup and sibling-checkout
 development commands for the unregistered dependencies. The generated example
 Manifest records those sources locally and remains uncommitted.

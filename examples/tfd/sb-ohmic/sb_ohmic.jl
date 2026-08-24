@@ -2,8 +2,8 @@ using LinearAlgebra
 using TTSolver
 using TTDynamics
 using QFiND
-using KaisouEOM
-using KaisouEOM: icm2ifs, kB
+using HEOMKit
+using HEOMKit: icm2ifs, kB
 using ExpFit
 using CairoMakie
 
@@ -85,10 +85,10 @@ bcf_error = norm(bcf_approx_vals .- dataset.bcf) / norm(dataset.bcf)
 println("  BCF approximation error: $(round(bcf_error, sigdigits=3))")
 
 # =============================================
-# HEOM using KaisouEOM (reference solution)
+# HEOM using HEOMKit (reference solution)
 # =============================================
 println("\n" * "=" ^ 60)
-println("HEOM: Running reference dynamics with KaisouEOM...")
+println("HEOM: Running reference dynamics with HEOMKit...")
 println("=" ^ 60)
 
 # System Hamiltonian in HEOM units

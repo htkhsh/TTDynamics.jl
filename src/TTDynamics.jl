@@ -2,7 +2,7 @@ module TTDynamics
 
 using LinearAlgebra
 using TTSolver
-using KaisouEOM
+using HEOMKit
 
 export PhysicalQuantity,
        Operator,
