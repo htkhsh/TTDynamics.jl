@@ -951,13 +951,15 @@ end
     @test !ispath(output_directory)
     mktempdir() do directory
         output = IOBuffer()
+        error_output = IOBuffer()
         process = run(
-            pipeline(Cmd(command; dir=directory); stdout=output, stderr=output);
+            pipeline(Cmd(command; dir=directory); stdout=output, stderr=error_output);
             wait=false,
         )
         wait(process)
         text = String(take!(output))
-        success(process) || println(stderr, text)
+        error_text = String(take!(error_output))
+        success(process) || println(stderr, error_text)
         @test success(process)
         @test text == marker
         @test isempty(readdir(directory))
