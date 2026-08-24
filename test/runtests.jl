@@ -11,6 +11,7 @@ include("tt_io.jl")
 include("holstein_current_correlation.jl")
 include("heom_twin_space.jl")
 include("lattice_frohlich.jl")
+include("holstein_simple.jl")
 
 include("../examples/tfd/ksl/utils.jl")
 include("../examples/holstein/config.jl")
