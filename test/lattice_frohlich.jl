@@ -4,8 +4,10 @@ using TTDynamics
 using TTSolver
 using HEOMKit
 
-include("../examples/holstein/utils.jl")
-include("../examples/lattice_frohlich/utils.jl")
+include("../examples/lattice_frohlich/config.jl")
+include("../examples/lattice_frohlich/model.jl")
+include("../examples/lattice_frohlich/dynamics.jl")
+include("../examples/lattice_frohlich/plotting.jl")
 include("../examples/lattice_frohlich/lattice_frohlich_brownian_heomtt.jl")
 
 @testset "Lattice Frohlich kernel utilities" begin
@@ -58,7 +60,11 @@ include("../examples/lattice_frohlich/lattice_frohlich_brownian_heomtt.jl")
     @test all(diag(operators[m]) == weights[m, :] for m in 1:5)
 
     local_kernel = d -> d == 0 ? 1.0 : 0.0
-    @test frohlich_coupling_operators(5; kernel=local_kernel) == site_projectors(5)
+    expected_local_operators = [
+        Matrix(Diagonal(ComplexF64.(m == n ? 1.0 : 0.0 for n in 1:5)))
+        for m in 1:5
+    ]
+    @test frohlich_coupling_operators(5; kernel=local_kernel) == expected_local_operators
     @test_throws ArgumentError normalized_frohlich_kernel(1)
     @test_throws ArgumentError normalized_frohlich_kernel(3; kernel=d -> NaN)
     @test_throws ArgumentError normalized_frohlich_kernel(3; kernel=d -> -1.0)
@@ -73,7 +79,7 @@ include("../examples/lattice_frohlich/lattice_frohlich_brownian_heomtt.jl")
 end
 
 @testset "Lattice Frohlich HEOM-TT construction" begin
-    config = HolsteinConfig(
+    config = LatticeFrohlichConfig(
         site_count=3,
         site_energies_cm=[0.0, 10.0, -5.0],
         hierarchy_local_size=2,
@@ -84,10 +90,10 @@ end
         exponents=ComplexF64[0.25],
         coefficients=ComplexF64[0.03 - 0.01im],
     )
-    problem = build_lattice_frohlich_heomtt(config, decomposition)
+    problem = build_lattice_frohlich_model(config, decomposition)
     expected = frohlich_coupling_operators(3)
 
-    @test problem.system.H_sys ≈ periodic_holstein_hamiltonian(
+    @test problem.system.H_sys ≈ periodic_lattice_frohlich_hamiltonian(
         config.site_energies_cm,
         config.hopping_cm,
     ) * icm2ifs
@@ -99,12 +105,23 @@ end
     @test isapprox(real(tt_dot(problem.trace_observable, initial)), 1.0; atol=1e-9)
 
     local_kernel = d -> d == 0 ? 1.0 : 0.0
-    local_problem = build_lattice_frohlich_heomtt(config, decomposition; kernel=local_kernel)
-    @test local_problem.system.noise.V == site_projectors(3)
+    local_problem = build_lattice_frohlich_model(config, decomposition; kernel=local_kernel)
+    expected_local_couplings = [
+        Matrix(Diagonal(ComplexF64.(m == n ? 1.0 : 0.0 for n in 1:3)))
+        for m in 1:3
+    ]
+    @test local_problem.system.noise.V == expected_local_couplings
 end
 
 @testset "Lattice Frohlich executable contract" begin
-    @test DEFAULT_LATTICE_FROHLICH_CONFIG isa HolsteinConfig
+    @test DEFAULT_LATTICE_FROHLICH_CONFIG isa LatticeFrohlichConfig
+    previous_config_name = Symbol(join(("Hol", "steinConfig")))
+    @test !isdefined(@__MODULE__, previous_config_name) ||
+          LatticeFrohlichConfig !== getfield(@__MODULE__, previous_config_name)
+    source = read(joinpath(@__DIR__, "..", "examples", "lattice_frohlich",
+                           "lattice_frohlich_brownian_heomtt.jl"), String)
+    @test !occursin(join(("..", "/holstein")), source)
+    @test !occursin(join(("Hol", "steinConfig")), source)
     project_text = read(joinpath(@__DIR__, "..", "examples", "lattice_frohlich", "Project.toml"), String)
     @test occursin("HEOMKit = \"e865c079-6a0d-426d-afc2-450809b0c699\"", project_text)
     @test occursin("TTDynamics = \"98f59f52-e016-4068-afe5-90126cbc5c1c\"", project_text)
@@ -124,7 +141,19 @@ end
     absent_before = map(path -> !ispath(path), default_paths)
     @test all(absent_before)
     expression = "include($(repr(example))); print(\"lattice-frohlich-import-ok\")"
-    command = `$(Base.julia_cmd()) --startup-file=no --project=$(dirname(example)) -e $expression`
+    command = `$(Base.julia_cmd()) --startup-file=no --compiled-modules=no --project=$(dirname(example)) -e $expression`
+    dev_root = dirname(dirname(readchomp(`git rev-parse --path-format=absolute --git-common-dir`)))
+    example_load_path = join((
+        abspath(joinpath(@__DIR__, "..")),
+        joinpath(dev_root, "TTSolver"),
+        joinpath(dev_root, "HEOMKit"),
+        joinpath(dev_root, "QFiND"),
+        "@",
+        "@stdlib",
+    ), ":")
+    command = addenv(command,
+                     "JULIA_LOAD_PATH" => example_load_path,
+                     "GKSwstype" => "100")
     mktempdir() do directory
         output = IOBuffer()
         process = run(pipeline(Cmd(command; dir=directory); stdout=output, stderr=output); wait=false)
