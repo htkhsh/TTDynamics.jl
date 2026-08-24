@@ -18,6 +18,42 @@ include("../examples/holstein/model.jl")
 include("../examples/holstein/dynamics.jl")
 include("../examples/holstein/plotting.jl")
 
+@testset "Holstein-family examples are self-contained" begin
+    roots = [
+        joinpath(@__DIR__, "..", "examples", "holstein"),
+        joinpath(@__DIR__, "..", "examples", "lattice_frohlich"),
+        joinpath(@__DIR__, "..", "examples", "holstein_current_correlation"),
+    ]
+    cross_example_include = Regex(
+        raw"include\([^\n]*(?:" *
+        raw"(?:\.\./|examples/)(?:holstein|lattice_frohlich|holstein_current_correlation)(?:/|\")|" *
+        raw"joinpath\([^)]*\"\.\.\"[^)]*\"(?:holstein|lattice_frohlich|holstein_current_correlation)\")",
+    )
+
+    cross_holstein_path = join(("..", "/holstein"))
+    @test occursin(cross_example_include, "include(\"$cross_holstein_path/config.jl\")")
+    @test occursin(
+        cross_example_include,
+        "include(joinpath(@__DIR__, \"..\", \"lattice_frohlich\", \"config.jl\"))",
+    )
+    @test !occursin(
+        cross_example_include,
+        "include(\"lattice_frohlich_brownian_heomtt.jl\")",
+    )
+
+    for root in roots
+        for file in filter(path -> endswith(path, ".jl"), readdir(root; join=true))
+            source = read(file, String)
+            @test !occursin(cross_example_include, source)
+        end
+    end
+    @test !isfile(joinpath(roots[1], "utils.jl"))
+    @test !isfile(joinpath(roots[2], "utils.jl"))
+    @test HolsteinConfig !== LatticeFrohlichConfig
+    @test HolsteinConfig !== HolsteinCurrentCorrelationConfig
+    @test LatticeFrohlichConfig !== HolsteinCurrentCorrelationConfig
+end
+
 @testset "Periodic Holstein example layout" begin
     config = HolsteinConfig()
     @test config.final_time_fs == 500.0

@@ -161,7 +161,7 @@ end
         text = String(take!(output))
         success(process) || println(stderr, text)
         @test success(process)
-        @test occursin("lattice-frohlich-import-ok", text)
+        @test text == "lattice-frohlich-import-ok"
         @test isempty(readdir(directory))
         absent_after = map(path -> !ispath(path), default_paths)
         @test absent_after == absent_before

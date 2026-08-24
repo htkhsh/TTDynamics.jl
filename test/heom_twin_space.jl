@@ -156,6 +156,7 @@ function guarded_example_import(
     project_path,
     load_path;
     required_definition=nothing,
+    require_quiet_output::Bool=false,
 )
     marker = "guarded-example-import-ok"
     example_directory = dirname(example_path)
@@ -181,6 +182,7 @@ function guarded_example_import(
         success(process) || println(stderr, output_text)
         @test success(process)
         @test occursin(marker, output_text)
+        require_quiet_output && @test output_text == marker
         @test isempty(readdir(directory))
     end
 end
@@ -413,6 +415,7 @@ end
             holstein_project,
             holstein_load_path;
             required_definition=:run_holstein_dynamics,
+            require_quiet_output=true,
         )
     else
         @test_skip "guarded example imports require the example environments"

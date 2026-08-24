@@ -922,17 +922,45 @@ end
 
 @testset "Holstein current-correlation executable guard" begin
     example_directory = joinpath(@__DIR__, "..", "examples", "holstein_current_correlation")
-    manifest_path = joinpath(example_directory, "Manifest.toml")
-    if isfile(manifest_path)
-        correlation_script = repr(joinpath(example_directory, "current_correlation.jl"))
-        output_directory = repr(joinpath(example_directory, "output"))
-        command = `$(Base.julia_cmd()) --project=$example_directory -e $(
-            "include($correlation_script); " *
-            "@assert DEFAULT_CORRELATION_TIME_FS == 200.0; " *
-            "@assert !ispath($output_directory)"
-        )`
-        @test success(command)
-    else
-        @test_skip "example environment has not been instantiated"
+    correlation_script = repr(joinpath(example_directory, "current_correlation.jl"))
+    output_directory = joinpath(example_directory, "output")
+    repository_root = normpath(joinpath(@__DIR__, ".."))
+    git_common_directory = readchomp(
+        `git -C $repository_root rev-parse --path-format=absolute --git-common-dir`,
+    )
+    development_root = dirname(dirname(git_common_directory))
+    environment_separator = Sys.iswindows() ? ';' : ':'
+    example_load_path = join(
+        [
+            repository_root,
+            joinpath(development_root, "TTSolver"),
+            joinpath(development_root, "HEOMKit"),
+            joinpath(development_root, "QFiND"),
+            "@",
+            "@stdlib",
+        ],
+        environment_separator,
+    )
+    marker = "correlation-import-ok"
+    expression = "include($correlation_script); " *
+                 "@assert DEFAULT_CORRELATION_TIME_FS == 200.0; " *
+                 "print($(repr(marker)))"
+    command = `$(Base.julia_cmd()) --startup-file=no --project=$example_directory -e $expression`
+    command = addenv(command, "JULIA_LOAD_PATH" => example_load_path, "GKSwstype" => "100")
+
+    @test !ispath(output_directory)
+    mktempdir() do directory
+        output = IOBuffer()
+        process = run(
+            pipeline(Cmd(command; dir=directory); stdout=output, stderr=output);
+            wait=false,
+        )
+        wait(process)
+        text = String(take!(output))
+        success(process) || println(stderr, text)
+        @test success(process)
+        @test text == marker
+        @test isempty(readdir(directory))
     end
+    @test !ispath(output_directory)
 end
