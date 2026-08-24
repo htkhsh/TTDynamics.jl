@@ -1,8 +1,3 @@
-active_project = Base.active_project()
-if isnothing(active_project) || !isfile(active_project)
-    pushfirst!(LOAD_PATH, joinpath(@__DIR__, "..", "holstein"))
-end
-
 using LinearAlgebra
 using Statistics
 using TTSolver

@@ -77,6 +77,10 @@ end
 
 @testset "Lattice Frohlich executable contract" begin
     @test DEFAULT_LATTICE_FROHLICH_CONFIG isa HolsteinConfig
+    project_text = read(joinpath(@__DIR__, "..", "examples", "lattice_frohlich", "Project.toml"), String)
+    @test occursin("HEOMKit = \"e865c079-6a0d-426d-afc2-450809b0c699\"", project_text)
+    @test occursin("TTDynamics = \"98f59f52-e016-4068-afe5-90126cbc5c1c\"", project_text)
+    @test occursin("QFiND = \"af16a7c1-792b-4481-9b88-c9c438329a9c\"", project_text)
     @test lattice_frohlich_output_paths("/tmp/example") == (
         csv=joinpath("/tmp/example", "lattice_frohlich_brownian_populations.csv"),
         populations=joinpath("/tmp/example", "lattice_frohlich_brownian_populations.png"),
