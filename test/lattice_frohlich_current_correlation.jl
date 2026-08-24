@@ -160,7 +160,7 @@ end
     mktempdir() do directory
         progress_io = IOBuffer()
         invoked = Ref(false)
-        runner = function(_, _; progress_callback, kwargs...)
+        runner = function(main_config, main_problem; progress_callback, kwargs...)
             invoked[] = true
             progress_callback((;
                 step=0, step_count=1, time_fs=0.0, trace=1.0,
