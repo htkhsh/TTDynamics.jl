@@ -151,9 +151,22 @@ function scheduled_twin_liouvillian(system::HEOMTTSystem; tol::Float64)
     return tt_round(liouvillian, tol)
 end
 
-function guarded_example_import(example_path, project_path, load_path)
+function guarded_example_import(
+    example_path,
+    project_path,
+    load_path;
+    required_definition=nothing,
+)
     marker = "guarded-example-import-ok"
-    expression = "include($(repr(example_path))); print($(repr(marker)))"
+    example_directory = dirname(example_path)
+    expression = "before = Set(readdir($(repr(example_directory)))); " *
+                 "include($(repr(example_path))); " *
+                 "after = Set(readdir($(repr(example_directory)))); " *
+                 "@assert before == after; "
+    !isnothing(required_definition) &&
+        (expression *= "@assert isdefined(Main, $(repr(required_definition))); ")
+    expression *=
+                 "print($(repr(marker)))"
     command = `$(Base.julia_cmd()) --startup-file=no --project=$(project_path) -e $expression`
     command = addenv(command, "JULIA_LOAD_PATH" => load_path, "GKSwstype" => "100")
 
@@ -395,7 +408,12 @@ end
             [repository_root, development_root, "@v#.#", "@stdlib"],
             environment_separator,
         )
-        guarded_example_import(holstein_example, holstein_project, holstein_load_path)
+        guarded_example_import(
+            holstein_example,
+            holstein_project,
+            holstein_load_path;
+            required_definition=:run_holstein_dynamics,
+        )
     else
         @test_skip "guarded example imports require the example environments"
     end

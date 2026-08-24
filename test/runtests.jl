@@ -13,8 +13,20 @@ include("heom_twin_space.jl")
 include("lattice_frohlich.jl")
 
 include("../examples/tfd/ksl/utils.jl")
-if !isdefined(@__MODULE__, :HolsteinConfig)
-    include("../examples/holstein/utils.jl")
+include("../examples/holstein/config.jl")
+include("../examples/holstein/model.jl")
+include("../examples/holstein/dynamics.jl")
+include("../examples/holstein/plotting.jl")
+
+@testset "Periodic Holstein example layout" begin
+    config = HolsteinConfig()
+    @test config.final_time_fs == 500.0
+    @test config.tpsd_tolerance == 2e-2
+    @test config.validation_sample_count == 200
+    @test validate_holstein_config(config) === config
+    @test length(holstein_site_projectors(config.site_count)) == config.site_count
+    @test holstein_output_paths("out").csv ==
+          joinpath("out", "holstein_brownian_populations.csv")
 end
 
 @testset "Periodic Holstein model utilities" begin
@@ -27,13 +39,13 @@ end
     H2 = periodic_holstein_hamiltonian([10.0, 20.0], 3.0)
     @test H2 == ComplexF64[10 -3; -3 20]
 
-    projectors = site_projectors(5)
+    projectors = holstein_site_projectors(5)
     @test all(ishermitian, projectors)
     @test sum(projectors) == Matrix{ComplexF64}(I, 5, 5)
     @test all(iszero(projectors[i] * projectors[j]) for i in 1:5 for j in 1:5 if i != j)
 
     config = HolsteinConfig()
-    @test validate_config(config) === config
+    @test validate_holstein_config(config) === config
     @test config.site_count == 5
     @test config.hopping_cm == 400.0
     @test config.brownian_frequency_cm == 1400.0
@@ -42,10 +54,10 @@ end
     @test config.temperature_K == 300.0
     @test config.temporal_basis_size == 3
     @test config.pade_order == 8
-    @test config.tpsd_tolerance == 5e-2
+    @test config.tpsd_tolerance == 2e-2
     @test config.pade_type == :Nm1
     @test config.validation_final_time_fs == 100.0
-    @test config.validation_sample_count == 400
+    @test config.validation_sample_count == 200
     @test_throws ArgumentError HolsteinConfig(site_count=1)
     @test_throws ArgumentError HolsteinConfig(initial_site=6)
     @test_throws ArgumentError HolsteinConfig(time_step_fs=3.0, final_time_fs=100.0)
@@ -131,7 +143,7 @@ end
 end
 
 @testset "Holstein multi-bath HEOM-TT initial state" begin
-    projectors = site_projectors(2)
+    projectors = holstein_site_projectors(2)
     baths = [BathExp(ComplexF64[0.1], ComplexF64[0.02], V) for V in projectors]
     noise = NoiseExp(baths)
     system = HEOMTTSystem(ComplexF64[0 -1; -1 0], noise, 2)
