@@ -74,3 +74,30 @@ end
     local_problem = build_lattice_frohlich_heomtt(config, decomposition; kernel=local_kernel)
     @test local_problem.system.noise.V == site_projectors(3)
 end
+
+@testset "Lattice Frohlich executable contract" begin
+    @test DEFAULT_LATTICE_FROHLICH_CONFIG isa HolsteinConfig
+    @test lattice_frohlich_output_paths("/tmp/example") == (
+        csv=joinpath("/tmp/example", "lattice_frohlich_brownian_populations.csv"),
+        populations=joinpath("/tmp/example", "lattice_frohlich_brownian_populations.png"),
+        trace=joinpath("/tmp/example", "lattice_frohlich_brownian_trace.png"),
+        rank=joinpath("/tmp/example", "lattice_frohlich_brownian_rank.png"),
+    )
+
+    example = abspath(joinpath(
+        @__DIR__, "..", "examples", "lattice_frohlich",
+        "lattice_frohlich_brownian_heomtt.jl",
+    ))
+    expression = "include($(repr(example))); print(\"lattice-frohlich-import-ok\")"
+    command = `$(Base.julia_cmd()) --startup-file=no --project=$(dirname(example)) -e $expression`
+    mktempdir() do directory
+        output = IOBuffer()
+        process = run(pipeline(Cmd(command; dir=directory); stdout=output, stderr=output); wait=false)
+        wait(process)
+        text = String(take!(output))
+        success(process) || println(stderr, text)
+        @test success(process)
+        @test occursin("lattice-frohlich-import-ok", text)
+        @test isempty(readdir(directory))
+    end
+end
