@@ -71,6 +71,4 @@ vertical units, while the rank PNG reports those rank diagnostics over time.
 trace-normalized.
 
 The checkpoint is equilibrated for a fixed 1000 fs, not a state automatically certified to be stationary.
-Before using results as a production calculation, converge the equilibration
-time, Padé order, TPSD tolerance, hierarchy local size, time step, and TT
-truncation/solver tolerances.
+Before using results as a production calculation, converge the equilibration time, Padé order, TPSD tolerance, hierarchy local size, time step, and TT truncation/solver tolerances.
