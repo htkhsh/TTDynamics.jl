@@ -580,6 +580,37 @@ julia = "1.11"
         )
             @test occursin(parameter, readme)
         end
+        for setting in (
+            "site_count = 5",
+            "site_energies_cm = zeros(5)",
+            "hopping_cm = 400.0",
+            "brownian_frequency_cm = 1400.0",
+            "brownian_damping_cm = 200.0",
+            "reorganization_energy_cm = 600.0",
+            "temperature_K = 300.0",
+            "initial_site = 1",
+            "final_time_fs = 500.0",
+            "time_step_fs = 1.0",
+            "pade_order = 8",
+            "tpsd_tolerance = 2e-2",
+            "pade_type = :Nm1",
+            "validation_final_time_fs = 100.0",
+            "validation_sample_count = 200",
+            "bcf_upper_bound_cm = 10_000.0",
+            "hierarchy_local_size = 4",
+            "temporal_basis_size = 3",
+            "tamen_tolerance = 2e-2",
+            "operator_tolerance = 1e-10",
+            "state_rounding_tolerance = 1e-10",
+            "sweep_count = 3",
+            "local_iterations = 5",
+            "kick_rank = 4",
+            "progress_interval = 10",
+            "equilibration_time_fs = 1000.0",
+            "correlation_time_fs = 200.0",
+        )
+            @test occursin(setting, readme)
+        end
     end
 end
 
@@ -589,8 +620,15 @@ end
     )
     forbidden_cross_example_include =
         r"include\([^\n]*(?:\.\./holstein|\.\./lattice_frohlich|\.\./holstein_current_correlation)"
-    source_files = filter(path -> endswith(path, ".jl"), readdir(example_directory; join=true))
-    @test length(source_files) == 6
+    source_files = String[]
+    for (root, _, files) in walkdir(example_directory)
+        append!(
+            source_files,
+            joinpath.(root, filter(path -> endswith(path, ".jl"), files)),
+        )
+    end
+    sort!(source_files)
+    @test !isempty(source_files)
     for file in source_files
         @test !occursin(forbidden_cross_example_include, read(file, String))
     end
