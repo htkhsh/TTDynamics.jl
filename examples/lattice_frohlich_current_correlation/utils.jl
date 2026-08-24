@@ -629,3 +629,52 @@ function write_lattice_frohlich_equilibration_png(path::AbstractString, result, 
         temporary_path === nothing || rm(temporary_path; force=true)
     end
 end
+
+"""
+    write_lattice_frohlich_current_csv(path, result; overwrite=false) -> String
+
+Write the complex particle-current correlation as real and imaginary
+inverse-femtosecond-squared components.
+"""
+function write_lattice_frohlich_current_csv(path::AbstractString, result;
+                                             overwrite::Bool=false)::String
+    target = String(path)
+    !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
+    row_count = length(result.times)
+    length(result.correlation) == row_count ||
+        throw(ArgumentError("correlation length must equal times length"))
+    length(result.maximum_rank) == row_count ||
+        throw(ArgumentError("maximum_rank length must equal times length"))
+    length(result.mean_rank) == row_count ||
+        throw(ArgumentError("mean_rank length must equal times length"))
+
+    temporary_path = nothing
+    try
+        temporary_path, io = mktemp(dirname(abspath(target)))
+        try
+            println(io, "time_fs,correlation_real_fs^-2,correlation_imag_fs^-2,max_rank,mean_rank")
+            for index in eachindex(result.times)
+                correlation = result.correlation[index]
+                println(io, join(Any[
+                    result.times[index],
+                    real(correlation),
+                    imag(correlation),
+                    result.maximum_rank[index],
+                    result.mean_rank[index],
+                ], ","))
+            end
+        finally
+            close(io)
+        end
+        !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
+        if overwrite
+            _lattice_frohlich_atomic_rename(temporary_path, target)
+            temporary_path = nothing
+        else
+            Base.Filesystem.hardlink(temporary_path, target)
+        end
+        return target
+    finally
+        temporary_path === nothing || rm(temporary_path; force=true)
+    end
+end

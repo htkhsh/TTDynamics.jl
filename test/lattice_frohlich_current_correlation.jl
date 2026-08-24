@@ -8,6 +8,7 @@ include("../examples/lattice_frohlich_current_correlation/config.jl")
 include("../examples/lattice_frohlich_current_correlation/model.jl")
 include("../examples/lattice_frohlich_current_correlation/utils.jl")
 include("../examples/lattice_frohlich_current_correlation/equilibrate.jl")
+include("../examples/lattice_frohlich_current_correlation/current_correlation.jl")
 
 @testset "Lattice Frohlich current configuration" begin
     config = LatticeFrohlichCurrentCorrelationConfig()
@@ -342,4 +343,155 @@ end
           current.maximum_rank[[1, 3, 5, 6]]
     @test [record.mean_rank for record in current_records] ==
           current.mean_rank[[1, 3, 5, 6]]
+end
+
+@testset "Lattice Frohlich reloaded current-correlation outputs" begin
+    config = LatticeFrohlichCurrentCorrelationConfig(
+        site_count=3,
+        site_energies_cm=zeros(3),
+        hopping_cm=20.0,
+        final_time_fs=1.0,
+        time_step_fs=1.0,
+        hierarchy_local_size=2,
+        operator_tolerance=1e-14,
+        state_rounding_tolerance=1e-14,
+        tamen_tolerance=1e-12,
+    )
+    decomposition = (
+        exponents=ComplexF64[0.4],
+        coefficients=ComplexF64[0.03 - 0.02im],
+    )
+    full_problem = build_lattice_frohlich_current_model(config, decomposition)
+    state = build_initial_state(full_problem.system, config.initial_site; tol=1e-14)
+    zero_liouvillian = TTMatrix([
+        zeros(ComplexF64, 1, dimension, dimension, 1)
+        for dimension in tt_dims(state)
+    ])
+    equilibrium_problem = (
+        system=full_problem.system,
+        liouvillian=zero_liouvillian,
+        trace_observable=full_problem.trace_observable,
+        population_observables=full_problem.population_observables,
+    )
+    equilibrium_result = run_lattice_frohlich_equilibration(
+        config,
+        equilibrium_problem;
+        initial_state=state,
+        equilibration_time_fs=config.time_step_fs,
+    )
+
+    function write_checkpoint(directory)
+        return save_lattice_frohlich_equilibration_outputs(
+            config,
+            decomposition,
+            full_problem,
+            equilibrium_result;
+            output_directory=directory,
+            equilibration_time_fs=config.time_step_fs,
+            plotter=(path, _) -> write(path, "synthetic PNG"),
+        )
+    end
+
+    @test _lattice_frohlich_current_output_paths("outputs") == (
+        state_path="outputs/lattice_frohlich_equilibrium.ttbin",
+        metadata_path="outputs/lattice_frohlich_equilibrium_metadata.toml",
+        csv_path="outputs/lattice_frohlich_current_correlation.csv",
+        png_path="outputs/lattice_frohlich_current_correlation.png",
+        rank_png_path="outputs/lattice_frohlich_current_correlation_ranks.png",
+    )
+
+    mktempdir() do directory
+        checkpoint = write_checkpoint(directory)
+        progress_io = IOBuffer()
+        reloaded = Ref{Any}(nothing)
+        runner = function(loaded_state, runner_config, runner_problem; kwargs...)
+            reloaded[] = loaded_state
+            return run_lattice_frohlich_current_correlation(
+                loaded_state,
+                runner_config,
+                runner_problem;
+                correlation_time_fs=kwargs[:correlation_time_fs],
+                progress_callback=kwargs[:progress_callback],
+            )
+        end
+        main_result = lattice_frohlich_current_correlation_main(
+            config;
+            correlation_time_fs=0.0,
+            output_directory=directory,
+            decomposition_builder=_ -> decomposition,
+            problem_builder=(_, _) -> full_problem,
+            correlation_runner=runner,
+            plotter=(path, _) -> write(path, "synthetic current PNG"),
+            rank_plotter=(path, _) -> write(path, "synthetic rank PNG"),
+            progress_io,
+        )
+        @test tt_full(reloaded[]) ≈ tt_full(load_tt_binary(checkpoint.state_path))
+        @test main_result.state_path == checkpoint.state_path
+        @test main_result.metadata_path == checkpoint.metadata_path
+        @test collect(basename.(values(main_result.outputs))) == [
+            "lattice_frohlich_current_correlation.csv",
+            "lattice_frohlich_current_correlation.png",
+            "lattice_frohlich_current_correlation_ranks.png",
+        ]
+        @test all(isfile, values(main_result.outputs))
+        @test first(split(read(main_result.csv_path, String), '\n')) ==
+              "time_fs,correlation_real_fs^-2,correlation_imag_fs^-2,max_rank,mean_rank"
+        reloaded_operators = build_lattice_frohlich_current_operators(config, full_problem)
+        @test main_result.result.correlation[1] ≈ tt_dot(
+            reloaded_operators.observable,
+            reloaded_operators.left_action * load_tt_binary(checkpoint.state_path),
+        )
+        @test occursin("Loaded equilibrium TT ranks", String(take!(progress_io)))
+    end
+
+    for missing_path in (:state_path, :metadata_path)
+        mktempdir() do directory
+            checkpoint = write_checkpoint(directory)
+            rm(getproperty(checkpoint, missing_path))
+            @test_throws ArgumentError lattice_frohlich_current_correlation_main(
+                config;
+                correlation_time_fs=0.0,
+                output_directory=directory,
+                decomposition_builder=_ -> decomposition,
+                problem_builder=(_, _) -> full_problem,
+            )
+        end
+    end
+
+    for output_field in (:csv_path, :png_path, :rank_png_path)
+        mktempdir() do directory
+            write_checkpoint(directory)
+            paths = _lattice_frohlich_current_output_paths(directory)
+            target = getproperty(paths, output_field)
+            write(target, "existing $output_field")
+            runner_called = Ref(false)
+            @test_throws ArgumentError lattice_frohlich_current_correlation_main(
+                config;
+                correlation_time_fs=0.0,
+                output_directory=directory,
+                overwrite=false,
+                decomposition_builder=_ -> error("should not decompose"),
+                problem_builder=(_, _) -> error("should not build"),
+                correlation_runner=(args...; kwargs...) -> (runner_called[] = true),
+            )
+            @test !runner_called[]
+            @test read(target, String) == "existing $output_field"
+        end
+    end
+
+    mktempdir() do directory
+        write_checkpoint(directory)
+        paths = _lattice_frohlich_current_output_paths(directory)
+        @test_throws ErrorException lattice_frohlich_current_correlation_main(
+            config;
+            correlation_time_fs=0.0,
+            output_directory=directory,
+            overwrite=false,
+            decomposition_builder=_ -> decomposition,
+            problem_builder=(_, _) -> full_problem,
+            plotter=(path, _) -> write(path, "synthetic current PNG"),
+            rank_plotter=(args...) -> error("forced rank plot failure"),
+        )
+        @test all(path -> !ispath(path), (paths.csv_path, paths.png_path, paths.rank_png_path))
+    end
 end

@@ -21,3 +21,35 @@ function _save_lattice_frohlich_equilibration_plot(path::AbstractString, result)
     save(String(path), figure)
     return String(path)
 end
+
+"""Render real and imaginary particle-current correlation components."""
+function _save_lattice_frohlich_current_plot(path::AbstractString, result)::String
+    figure = Figure()
+    axis = Axis(
+        figure[1, 1];
+        xlabel="Time (fs)",
+        ylabel="Current correlation (fs⁻²)",
+        title="Lattice Fröhlich particle-current correlation",
+    )
+    lines!(axis, result.times, real.(result.correlation); label="Real")
+    lines!(axis, result.times, imag.(result.correlation); label="Imaginary")
+    axislegend(axis)
+    save(String(path), figure)
+    return String(path)
+end
+
+"""Render maximum and mean TT ranks during current propagation."""
+function _save_lattice_frohlich_current_rank_plot(path::AbstractString, result)::String
+    figure = Figure()
+    axis = Axis(
+        figure[1, 1];
+        xlabel="Time (fs)",
+        ylabel="TT rank",
+        title="Lattice Fröhlich current-correlation TT ranks",
+    )
+    lines!(axis, result.times, result.maximum_rank; label="Maximum rank")
+    lines!(axis, result.times, result.mean_rank; label="Mean rank")
+    axislegend(axis)
+    save(String(path), figure)
+    return String(path)
+end
