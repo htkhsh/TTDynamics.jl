@@ -54,6 +54,52 @@ include("../examples/holstein/plotting.jl")
     @test LatticeFrohlichConfig !== HolsteinCurrentCorrelationConfig
 end
 
+function assert_holstein_family_default_config(config)
+    expected = (
+        site_count=5,
+        site_energies_cm=zeros(5),
+        hopping_cm=400.0,
+        brownian_frequency_cm=1400.0,
+        brownian_damping_cm=200.0,
+        reorganization_energy_cm=600.0,
+        temperature_K=300.0,
+        initial_site=1,
+        final_time_fs=500.0,
+        time_step_fs=1.0,
+        pade_order=8,
+        tpsd_tolerance=2e-2,
+        pade_type=:Nm1,
+        validation_final_time_fs=100.0,
+        validation_sample_count=200,
+        bcf_upper_bound_cm=10_000.0,
+        hierarchy_local_size=4,
+        temporal_basis_size=3,
+        tamen_tolerance=2e-2,
+        operator_tolerance=1e-10,
+        state_rounding_tolerance=1e-10,
+        sweep_count=3,
+        local_iterations=5,
+        kick_rank=4,
+        progress_interval=10,
+    )
+    @test fieldnames(typeof(config)) == keys(expected)
+    for field in keys(expected)
+        @test getproperty(config, field) == getproperty(expected, field)
+    end
+end
+
+@testset "Holstein-family configuration defaults" begin
+    @testset "HolsteinConfig" begin
+        assert_holstein_family_default_config(HolsteinConfig())
+    end
+    @testset "LatticeFrohlichConfig" begin
+        assert_holstein_family_default_config(LatticeFrohlichConfig())
+    end
+    @testset "HolsteinCurrentCorrelationConfig" begin
+        assert_holstein_family_default_config(HolsteinCurrentCorrelationConfig())
+    end
+end
+
 @testset "Periodic Holstein example layout" begin
     config = HolsteinConfig()
     @test config.final_time_fs == 500.0
@@ -61,8 +107,33 @@ end
     @test config.validation_sample_count == 200
     @test validate_holstein_config(config) === config
     @test length(holstein_site_projectors(config.site_count)) == config.site_count
-    @test holstein_output_paths("out").csv ==
-          joinpath("out", "holstein_brownian_populations.csv")
+    mktempdir() do directory
+        paths = holstein_output_paths(directory)
+        @test paths == (
+            csv=joinpath(directory, "holstein_brownian_populations.csv"),
+            populations=joinpath(directory, "holstein_brownian_populations.png"),
+            trace=joinpath(directory, "holstein_brownian_trace.png"),
+            rank=joinpath(directory, "holstein_brownian_rank.png"),
+        )
+        @test all(path -> !ispath(path), paths)
+    end
+
+    result = (
+        times=[0.0, 1.5],
+        populations=[1.0 0.25; 0.0 0.75],
+        trace=[1.0, 0.99],
+        maximum_rank=[2, 3],
+        mean_rank=[1.5, 2.0],
+    )
+    mktempdir() do directory
+        path = joinpath(directory, "populations.csv")
+        @test write_holstein_population_csv(path, result) == path
+        @test readlines(path) == [
+            "time_fs,population_site_1,population_site_2,trace,max_rank,mean_rank",
+            "0.0,1.0,0.0,1.0,2,1.5",
+            "1.5,0.25,0.75,0.99,3,2.0",
+        ]
+    end
 end
 
 @testset "Periodic Holstein model utilities" begin
@@ -109,6 +180,32 @@ end
         brownian_frequency_cm=100.0,
         brownian_damping_cm=200.0,
     )
+end
+
+@testset "Periodic Holstein HEOM-TT construction" begin
+    config = HolsteinConfig(
+        site_count=3,
+        site_energies_cm=[0.0, 10.0, -5.0],
+        hierarchy_local_size=2,
+        final_time_fs=1.0,
+        time_step_fs=1.0,
+        operator_tolerance=1e-14,
+    )
+    decomposition = (
+        exponents=ComplexF64[0.25],
+        coefficients=ComplexF64[0.03 - 0.01im],
+    )
+    problem = build_holstein_model(config, decomposition)
+
+    @test problem.system.H_sys ≈ periodic_holstein_hamiltonian(
+        config.site_energies_cm,
+        config.hopping_cm,
+    ) * icm2ifs
+    @test heom_tt_dimensions(problem.system) == [3, 3, 2, 2, 2]
+    @test length(problem.population_observables) == 3
+    initial = build_initial_state(problem.system, config.initial_site; tol=1e-14)
+    @test tt_dims(initial) == [3, 3, 2, 2, 2]
+    @test isapprox(real(tt_dot(problem.trace_observable, initial)), 1.0; atol=1e-9)
 end
 
 @testset "KSL example utilities" begin

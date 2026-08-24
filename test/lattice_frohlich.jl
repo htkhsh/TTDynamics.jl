@@ -133,6 +133,23 @@ end
         rank=joinpath("/tmp/example", "lattice_frohlich_brownian_rank.png"),
     )
 
+    result = (
+        times=[0.0, 1.5],
+        populations=[1.0 0.25; 0.0 0.75],
+        trace=[1.0, 0.99],
+        maximum_rank=[2, 3],
+        mean_rank=[1.5, 2.0],
+    )
+    mktempdir() do directory
+        path = joinpath(directory, "populations.csv")
+        @test write_lattice_frohlich_population_csv(path, result) == path
+        @test readlines(path) == [
+            "time_fs,population_site_1,population_site_2,trace,max_rank,mean_rank",
+            "0.0,1.0,0.0,1.0,2,1.5",
+            "1.5,0.25,0.75,0.99,3,2.0",
+        ]
+    end
+
     example = abspath(joinpath(
         @__DIR__, "..", "examples", "lattice_frohlich",
         "lattice_frohlich_brownian_heomtt.jl",
@@ -143,6 +160,7 @@ end
     expression = "include($(repr(example))); print(\"lattice-frohlich-import-ok\")"
     command = `$(Base.julia_cmd()) --startup-file=no --compiled-modules=no --project=$(dirname(example)) -e $expression`
     dev_root = dirname(dirname(readchomp(`git rev-parse --path-format=absolute --git-common-dir`)))
+    environment_separator = Sys.iswindows() ? ';' : ':'
     example_load_path = join((
         abspath(joinpath(@__DIR__, "..")),
         joinpath(dev_root, "TTSolver"),
@@ -150,7 +168,7 @@ end
         joinpath(dev_root, "QFiND"),
         "@",
         "@stdlib",
-    ), ":")
+    ), environment_separator)
     command = addenv(command,
                      "JULIA_LOAD_PATH" => example_load_path,
                      "GKSwstype" => "100")
