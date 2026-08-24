@@ -495,3 +495,146 @@ end
         @test all(path -> !ispath(path), (paths.csv_path, paths.png_path, paths.rank_png_path))
     end
 end
+
+function lattice_frohlich_current_example_snapshot(directory::AbstractString)
+    snapshot = String[]
+    for (root, directories, files) in walkdir(directory)
+        sort!(directories)
+        sort!(files)
+        for child in directories
+            push!(snapshot, "directory:" * relpath(joinpath(root, child), directory))
+        end
+        for child in files
+            path = joinpath(root, child)
+            push!(snapshot, "file:" * relpath(path, directory) * ":" * repr(read(path)))
+        end
+    end
+    return snapshot
+end
+
+@testset "Lattice Frohlich current standalone environment" begin
+    example_directory = joinpath(
+        @__DIR__, "..", "examples", "lattice_frohlich_current_correlation",
+    )
+    project_path = joinpath(example_directory, "Project.toml")
+    readme_path = joinpath(example_directory, "README.md")
+    expected_project = """
+[deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+HEOMKit = "e865c079-6a0d-426d-afc2-450809b0c699"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+QFiND = "af16a7c1-792b-4481-9b88-c9c438329a9c"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+TTDynamics = "98f59f52-e016-4068-afe5-90126cbc5c1c"
+TTSolver = "6fd66e5e-56e0-488c-9f68-e25b72b7e6b0"
+
+[compat]
+CairoMakie = "0.12 - 0.15"
+HEOMKit = "1"
+LinearAlgebra = "1.11"
+QFiND = "1"
+Statistics = "1.11"
+TOML = "1"
+TTDynamics = "1"
+TTSolver = "1"
+julia = "1.11"
+"""
+    @test isfile(project_path)
+    isfile(project_path) && @test read(project_path, String) == expected_project
+
+    ignored_paths = split(read(joinpath(@__DIR__, "..", ".gitignore"), String), '\n')
+    @test "/examples/lattice_frohlich_current_correlation/Manifest.toml" in ignored_paths
+    @test "/examples/lattice_frohlich_current_correlation/output/" in ignored_paths
+
+    @test isfile(readme_path)
+    if isfile(readme_path)
+        readme = read(readme_path, String)
+        @test occursin("Pkg.develop([Pkg.PackageSpec(path=path) for path in ARGS]); Pkg.instantiate()", readme)
+        @test occursin(
+            "julia --project=examples/lattice_frohlich_current_correlation \\\n  examples/lattice_frohlich_current_correlation/equilibrate.jl",
+            readme,
+        )
+        @test occursin(
+            "julia --project=examples/lattice_frohlich_current_correlation \\\n  examples/lattice_frohlich_current_correlation/current_correlation.jl",
+            readme,
+        )
+        for output in (
+            "lattice_frohlich_equilibration.csv",
+            "lattice_frohlich_equilibrium.ttbin",
+            "lattice_frohlich_equilibrium_metadata.toml",
+            "lattice_frohlich_equilibration_populations.png",
+            "lattice_frohlich_current_correlation.csv",
+            "lattice_frohlich_current_correlation.png",
+            "lattice_frohlich_current_correlation_ranks.png",
+        )
+            @test occursin(output, readme)
+        end
+        @test occursin("C(t) = Tr[J exp(L t)(J rho_eq)]", readme)
+        @test occursin("fs^-2", readme)
+        @test occursin("fixed 1000 fs", readme)
+        @test occursin("not a state automatically certified to be stationary", readme)
+        for parameter in (
+            "equilibration time", "Padé order", "TPSD tolerance",
+            "hierarchy local size", "time step", "TT truncation/solver tolerances",
+        )
+            @test occursin(parameter, readme)
+        end
+    end
+end
+
+@testset "Lattice Frohlich current executable isolation" begin
+    example_directory = joinpath(
+        @__DIR__, "..", "examples", "lattice_frohlich_current_correlation",
+    )
+    forbidden_cross_example_include =
+        r"include\([^\n]*(?:\.\./holstein|\.\./lattice_frohlich|\.\./holstein_current_correlation)"
+    source_files = filter(path -> endswith(path, ".jl"), readdir(example_directory; join=true))
+    @test length(source_files) == 6
+    for file in source_files
+        @test !occursin(forbidden_cross_example_include, read(file, String))
+    end
+
+    repository_root = normpath(joinpath(@__DIR__, ".."))
+    git_common_directory = readchomp(
+        `git -C $repository_root rev-parse --path-format=absolute --git-common-dir`,
+    )
+    development_root = dirname(dirname(git_common_directory))
+    sibling_ttsolver = joinpath(development_root, "TTSolver")
+    sibling_heomkit = joinpath(development_root, "HEOMKit")
+    sibling_qfind = joinpath(development_root, "QFiND")
+    separator = Sys.iswindows() ? ';' : ':'
+    load_path = join(
+        (repository_root, sibling_ttsolver, sibling_heomkit, sibling_qfind, "@", "@stdlib"),
+        separator,
+    )
+    equilibrate_script = repr(joinpath(example_directory, "equilibrate.jl"))
+    correlation_script = repr(joinpath(example_directory, "current_correlation.jl"))
+    marker = "lattice-frohlich-current-import-ok"
+    expression = "include($equilibrate_script); include($correlation_script); " *
+                 "@assert DEFAULT_LATTICE_FROHLICH_CORRELATION_TIME_FS == 200.0; " *
+                 "print($(repr(marker)))"
+    command = `$(Base.julia_cmd()) --startup-file=no --compiled-modules=no --project=$example_directory -e $expression`
+    command = addenv(command, "JULIA_LOAD_PATH" => load_path, "GKSwstype" => "100")
+
+    output_directory = joinpath(example_directory, "output")
+    snapshot_before = lattice_frohlich_current_example_snapshot(example_directory)
+    @test !ispath(output_directory)
+    mktempdir() do directory
+        stdout_buffer = IOBuffer()
+        stderr_buffer = IOBuffer()
+        process = run(
+            pipeline(Cmd(command; dir=directory); stdout=stdout_buffer, stderr=stderr_buffer);
+            wait=false,
+        )
+        wait(process)
+        stdout_text = String(take!(stdout_buffer))
+        stderr_text = String(take!(stderr_buffer))
+        success(process) || println(stderr, stderr_text)
+        @test success(process)
+        @test stdout_text == marker
+        @test isempty(readdir(directory))
+    end
+    @test lattice_frohlich_current_example_snapshot(example_directory) == snapshot_before
+    @test !ispath(output_directory)
+end

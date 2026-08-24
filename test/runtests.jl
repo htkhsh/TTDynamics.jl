@@ -25,6 +25,7 @@ include("../examples/holstein/plotting.jl")
         joinpath(@__DIR__, "..", "examples", "holstein"),
         joinpath(@__DIR__, "..", "examples", "lattice_frohlich"),
         joinpath(@__DIR__, "..", "examples", "holstein_current_correlation"),
+        joinpath(@__DIR__, "..", "examples", "lattice_frohlich_current_correlation"),
     ]
     cross_example_include = Regex(
         raw"include\([^\n]*(?:" *
@@ -54,6 +55,9 @@ include("../examples/holstein/plotting.jl")
     @test HolsteinConfig !== LatticeFrohlichConfig
     @test HolsteinConfig !== HolsteinCurrentCorrelationConfig
     @test LatticeFrohlichConfig !== HolsteinCurrentCorrelationConfig
+    @test LatticeFrohlichCurrentCorrelationConfig !== HolsteinConfig
+    @test LatticeFrohlichCurrentCorrelationConfig !== LatticeFrohlichConfig
+    @test LatticeFrohlichCurrentCorrelationConfig !== HolsteinCurrentCorrelationConfig
 end
 
 function assert_holstein_family_default_config(config)
