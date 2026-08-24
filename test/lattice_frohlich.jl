@@ -6,6 +6,7 @@ using HEOMKit
 
 include("../examples/holstein/utils.jl")
 include("../examples/lattice_frohlich/utils.jl")
+include("../examples/lattice_frohlich/lattice_frohlich_brownian_heomtt.jl")
 
 @testset "Lattice Frohlich kernel utilities" begin
     @test periodic_lattice_distance(1, 1, 5) == 0
@@ -41,4 +42,35 @@ include("../examples/lattice_frohlich/utils.jl")
     @test_throws ArgumentError normalized_frohlich_kernel(3; kernel=d -> NaN)
     @test_throws ArgumentError normalized_frohlich_kernel(3; kernel=d -> -1.0)
     @test_throws ArgumentError normalized_frohlich_kernel(3; kernel=d -> 0.0)
+end
+
+@testset "Lattice Frohlich HEOM-TT construction" begin
+    config = HolsteinConfig(
+        site_count=3,
+        site_energies_cm=[0.0, 10.0, -5.0],
+        hierarchy_local_size=2,
+        final_time_fs=1.0,
+        time_step_fs=1.0,
+    )
+    decomposition = (
+        exponents=ComplexF64[0.25],
+        coefficients=ComplexF64[0.03 - 0.01im],
+    )
+    problem = build_lattice_frohlich_heomtt(config, decomposition)
+    expected = frohlich_coupling_operators(3)
+
+    @test problem.system.H_sys ≈ periodic_holstein_hamiltonian(
+        config.site_energies_cm,
+        config.hopping_cm,
+    ) * icm2ifs
+    @test problem.system.noise.V == expected
+    @test heom_tt_dimensions(problem.system) == [3, 3, 2, 2, 2]
+    @test length(problem.population_observables) == 3
+    initial = build_initial_state(problem.system, config.initial_site; tol=1e-12)
+    @test tt_dims(initial) == [3, 3, 2, 2, 2]
+    @test isapprox(real(tt_dot(problem.trace_observable, initial)), 1.0; atol=1e-9)
+
+    local_kernel = d -> d == 0 ? 1.0 : 0.0
+    local_problem = build_lattice_frohlich_heomtt(config, decomposition; kernel=local_kernel)
+    @test local_problem.system.noise.V == site_projectors(3)
 end
