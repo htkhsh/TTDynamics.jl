@@ -535,6 +535,37 @@ end
     @test length(result.mean_rank) == length(result.times)
     @test result.state isa TTTensor
     @test tt_dot(problem.trace_observable, result.state) ≈ 1
+
+    progress_config = unchecked_holstein_config(config; progress_interval=2)
+    progress_records = NamedTuple[]
+    progress_result = run_equilibration(
+        progress_config,
+        problem;
+        initial_state=state,
+        equilibration_time_fs=5.0,
+        progress_callback=record -> push!(progress_records, record),
+    )
+    @test [record.step for record in progress_records] == [0, 2, 4, 5]
+    @test [record.step_count for record in progress_records] == fill(5, 4)
+    @test [record.time_fs for record in progress_records] == [0.0, 2.0, 4.0, 5.0]
+    for record in progress_records
+        result_index = record.step + 1
+        @test record.trace == progress_result.trace[result_index]
+        @test record.maximum_rank == progress_result.maximum_rank[result_index]
+        @test record.mean_rank == progress_result.mean_rank[result_index]
+        @test isfinite(record.elapsed_seconds)
+        @test record.elapsed_seconds >= 0
+    end
+
+    progress_io = IOBuffer()
+    _print_equilibration_progress(progress_io, progress_records[2])
+    progress_message = String(take!(progress_io))
+    @test occursin("Step 2/5", progress_message)
+    @test occursin("time=2.0 fs", progress_message)
+    @test occursin("trace=$(progress_records[2].trace)", progress_message)
+    @test occursin("max rank=$(progress_records[2].maximum_rank)", progress_message)
+    @test occursin("mean rank=$(progress_records[2].mean_rank)", progress_message)
+    @test occursin("elapsed=", progress_message)
     @test_throws ArgumentError run_equilibration(
         config,
         problem;
@@ -689,10 +720,23 @@ end
 
     mktempdir() do directory
         main_plot_calls = Any[]
+        main_progress_io = IOBuffer()
         main_plotter = (path, result) -> begin
             push!(main_plot_calls, (path, result))
             write(path, "main synthetic png $(length(main_plot_calls))")
             path
+        end
+        main_runner = function(args...; progress_callback, kwargs...)
+            progress_callback((;
+                step=0,
+                step_count=1,
+                time_fs=0.0,
+                trace=1.0,
+                maximum_rank=1,
+                mean_rank=1.0,
+                elapsed_seconds=0.0,
+            ))
+            return result
         end
         run_main() = equilibrate_main(
                 config;
@@ -700,8 +744,9 @@ end
                 output_directory=directory,
                 decomposition_builder=_ -> decomposition,
                 problem_builder=(_, _) -> problem,
-                equilibration_runner=(args...; kwargs...) -> result,
+                equilibration_runner=main_runner,
                 plotter=main_plotter,
+                progress_io=main_progress_io,
             )
         main_result = run_main()
         replaced_result = run_main()
@@ -713,6 +758,7 @@ end
         @test length(main_plot_calls) == 2
         @test all(call[2] === result for call in main_plot_calls)
         @test read(main_result.png_path, String) == "main synthetic png 2"
+        @test length(findall("Step 0/1", String(take!(main_progress_io)))) == 2
     end
 end
 

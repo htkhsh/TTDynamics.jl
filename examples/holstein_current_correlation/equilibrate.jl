@@ -150,7 +150,8 @@ function equilibrate_main(config=DEFAULT_CURRENT_CORRELATION_CONFIG;
                           decomposition_builder=_default_decomposition_builder,
                           problem_builder=_default_problem_builder,
                           equilibration_runner=run_equilibration,
-                          plotter=_default_equilibration_plotter)::NamedTuple
+                          plotter=_default_equilibration_plotter,
+                          progress_io::IO=stdout)::NamedTuple
     validate_current_correlation_config(config)
     _equilibration_step_count(config, equilibration_time_fs)
     decomposition = decomposition_builder(config)
@@ -159,6 +160,8 @@ function equilibrate_main(config=DEFAULT_CURRENT_CORRELATION_CONFIG;
         config,
         problem;
         equilibration_time_fs,
+        progress_callback=progress ->
+            _print_equilibration_progress(progress_io, progress),
     )
     paths = save_equilibration_outputs(
         config,

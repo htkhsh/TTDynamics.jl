@@ -518,14 +518,16 @@ end
 
 """
     run_equilibration(config, problem; initial_state=nothing,
-                      equilibration_time_fs=1000.0) -> NamedTuple
+                      equilibration_time_fs=1000.0,
+                      progress_callback=nothing) -> NamedTuple
 
 Propagate a localized Holstein HEOM state for an exact number of time steps,
 recording root-space diagnostics and returning a trace-normalized final state.
 """
 function run_equilibration(config::HolsteinCurrentCorrelationConfig, problem;
                            initial_state=nothing,
-                           equilibration_time_fs::Real=1000.0)::NamedTuple
+                           equilibration_time_fs::Real=1000.0,
+                           progress_callback=nothing)::NamedTuple
     validate_current_correlation_config(config)
     step_count = _equilibration_step_count(config, equilibration_time_fs)
     state = isnothing(initial_state) ? build_initial_state(
@@ -535,16 +537,34 @@ function run_equilibration(config::HolsteinCurrentCorrelationConfig, problem;
     ) : initial_state
     state isa TTTensor || throw(ArgumentError("initial_state must be a TTTensor"))
 
+    start_time_ns = time_ns()
+    observe_equilibration_state = function(step, time, rho)
+        observation = measure_heom_state(
+            rho,
+            problem.trace_observable,
+            problem.population_observables,
+        )
+        should_report = step == 0 || step == step_count ||
+                        step % config.progress_interval == 0
+        if progress_callback !== nothing && should_report
+            progress_callback((;
+                step,
+                step_count,
+                time_fs=time,
+                trace=observation.trace,
+                maximum_rank=observation.maximum_rank,
+                mean_rank=observation.mean_rank,
+                elapsed_seconds=(time_ns() - start_time_ns) / 1.0e9,
+            ))
+        end
+        return observation
+    end
     propagated = propagate_fixed_steps(
         state,
         problem,
         config,
         step_count;
-        observe=(step, time, rho) -> measure_heom_state(
-            rho,
-            problem.trace_observable,
-            problem.population_observables,
-        ),
+        observe=observe_equilibration_state,
     )
     observations = propagated.observations
     save_count = length(observations)
@@ -563,6 +583,20 @@ function run_equilibration(config::HolsteinCurrentCorrelationConfig, problem;
         mean_rank,
         state=normalize_heom_state(propagated.state, problem.trace_observable),
     )
+end
+
+function _print_equilibration_progress(io::IO, progress)::Nothing
+    elapsed = round(progress.elapsed_seconds; digits=2)
+    println(
+        io,
+        "  Step $(progress.step)/$(progress.step_count) | " *
+        "time=$(progress.time_fs) fs | " *
+        "trace=$(progress.trace) | " *
+        "max rank=$(progress.maximum_rank) | " *
+        "mean rank=$(progress.mean_rank) | " *
+        "elapsed=$(elapsed) s",
+    )
+    return nothing
 end
 
 """
