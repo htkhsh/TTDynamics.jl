@@ -22,6 +22,27 @@ include("../examples/lattice_frohlich/lattice_frohlich_brownian_heomtt.jl")
     @test default_frohlich_kernel(2) == 5.0^(-1.5)
     @test_throws ArgumentError default_frohlich_kernel(-1)
 
+    two_site_weights = normalized_frohlich_kernel(2)
+    @test two_site_weights ≈ [sqrt(8.0) / 3.0 1.0 / 3.0;
+                              1.0 / 3.0 sqrt(8.0) / 3.0]
+    @test all(isapprox(sum(abs2, two_site_weights[:, n]), 1.0; atol=1e-14) for n in 1:2)
+    @test two_site_weights[:, 2] ≈ circshift(two_site_weights[:, 1], 1)
+
+    @test periodic_lattice_distance(1, 3, 4) == 2
+    @test periodic_lattice_distance(2, 4, 4) == 2
+    even_raw_column = [1.0, 2.0^(-1.5), 5.0^(-1.5), 2.0^(-1.5)]
+    even_weights = normalized_frohlich_kernel(4)
+    @test even_weights[:, 1] ≈ even_raw_column ./ sqrt(sum(abs2, even_raw_column))
+    @test even_weights == transpose(even_weights)
+    @test all(isapprox(sum(abs2, even_weights[:, n]), 1.0; atol=1e-14) for n in 1:4)
+    @test all(even_weights[:, mod1(n + 1, 4)] == circshift(even_weights[:, n], 1) for n in 1:4)
+
+    even_operators = frohlich_coupling_operators(4)
+    @test length(even_operators) == 4
+    @test all(isdiag, even_operators)
+    @test all(ishermitian, even_operators)
+    @test all(diag(even_operators[mod1(m + 1, 4)]) == circshift(diag(even_operators[m]), 1) for m in 1:4)
+
     weights = normalized_frohlich_kernel(5)
     @test size(weights) == (5, 5)
     @test all(isfinite, weights)
@@ -42,6 +63,13 @@ include("../examples/lattice_frohlich/lattice_frohlich_brownian_heomtt.jl")
     @test_throws ArgumentError normalized_frohlich_kernel(3; kernel=d -> NaN)
     @test_throws ArgumentError normalized_frohlich_kernel(3; kernel=d -> -1.0)
     @test_throws ArgumentError normalized_frohlich_kernel(3; kernel=d -> 0.0)
+
+    kernel_call = Ref(0)
+    call_dependent_kernel = _ -> begin
+        kernel_call[] += 1
+        1.0 + kernel_call[] / 100.0
+    end
+    @test_throws ErrorException normalized_frohlich_kernel(4; kernel=call_dependent_kernel)
 end
 
 @testset "Lattice Frohlich HEOM-TT construction" begin
@@ -92,6 +120,9 @@ end
         @__DIR__, "..", "examples", "lattice_frohlich",
         "lattice_frohlich_brownian_heomtt.jl",
     ))
+    default_paths = lattice_frohlich_output_paths(dirname(example))
+    absent_before = map(path -> !ispath(path), default_paths)
+    @test all(absent_before)
     expression = "include($(repr(example))); print(\"lattice-frohlich-import-ok\")"
     command = `$(Base.julia_cmd()) --startup-file=no --project=$(dirname(example)) -e $expression`
     mktempdir() do directory
@@ -103,5 +134,8 @@ end
         @test success(process)
         @test occursin("lattice-frohlich-import-ok", text)
         @test isempty(readdir(directory))
+        absent_after = map(path -> !ispath(path), default_paths)
+        @test absent_after == absent_before
+        @test all(absent_after)
     end
 end

@@ -6,27 +6,18 @@ This example replaces each local Holstein coupling projector with
 `sum_m f_mn^2 = 1`. Therefore `reorganization_energy_cm` retains the same
 site-local meaning as in the Holstein example.
 
-For a remote setup, add the known-compatible revisions and instantiate:
-
-```bash
-julia --project=examples/lattice_frohlich -e '
-using Pkg
-Pkg.add([
-    Pkg.PackageSpec(url="https://github.com/htkhsh/TTDynamics.jl.git", rev="ace749d14ed8dd7eeef74cd21ba00dc11a4ade7b"),
-    Pkg.PackageSpec(url="https://github.com/htkhsh/TTSolver.jl.git", rev="7a2eb169648257b9619c14bab349d63798bd220a"),
-    Pkg.PackageSpec(url="https://github.com/DOC-Package/HEOMKit.jl.git", rev="06f7939557bce802ea967b6028e9899f55a120dd"),
-    Pkg.PackageSpec(url="https://github.com/DOC-Package/QFiND.jl.git", rev="e5d1186cb2f07195c8dd07429861cbe898c9b4da"),
-])
-Pkg.instantiate()
-'
-```
-
-From the TTDynamics repository root, develop the sibling working copies:
+The authoritative setup currently uses sibling working copies. From the
+TTDynamics repository root, develop all four local packages:
 
 ```bash
 DEV_ROOT="$(dirname "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")")"
 julia --project=examples/lattice_frohlich -e 'using Pkg; Pkg.develop([Pkg.PackageSpec(path=path) for path in ARGS]); Pkg.instantiate()' "$PWD" "$DEV_ROOT/TTSolver" "$DEV_ROOT/HEOMKit" "$DEV_ROOT/QFiND"
 ```
+
+A remote-only setup requires published, mutually compatible post-rename
+revisions of TTDynamics, TTSolver, HEOMKit, and QFiND. This example does not
+claim a compatible remote revision set until those revisions are published;
+older pinned revisions predate the HEOMKit rename.
 
 Run the calculation with:
 
