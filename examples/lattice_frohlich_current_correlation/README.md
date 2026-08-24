@@ -70,7 +70,7 @@ vertical units, while the rank PNG reports those rank diagnostics over time.
 `J rho_eq` is a current source rather than a density matrix, so it is not
 trace-normalized.
 
-The checkpoint is equilibrated for a fixed 1000 fs, not a state automatically
-certified to be stationary. Before using results as a production calculation,
-converge the equilibration time, Padé order, TPSD tolerance, hierarchy local
-size, time step, and TT truncation/solver tolerances.
+The checkpoint is equilibrated for a fixed 1000 fs, not a state automatically certified to be stationary.
+Before using results as a production calculation, converge the equilibration
+time, Padé order, TPSD tolerance, hierarchy local size, time step, and TT
+truncation/solver tolerances.
