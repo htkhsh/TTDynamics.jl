@@ -10,6 +10,7 @@ end
 include("tt_io.jl")
 include("holstein_current_correlation.jl")
 include("heom_twin_space.jl")
+include("lattice_frohlich.jl")
 
 include("../examples/tfd/ksl/utils.jl")
 if !isdefined(@__MODULE__, :HolsteinConfig)
