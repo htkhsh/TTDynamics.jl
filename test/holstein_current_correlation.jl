@@ -945,7 +945,7 @@ end
     expression = "include($correlation_script); " *
                  "@assert DEFAULT_CORRELATION_TIME_FS == 200.0; " *
                  "print($(repr(marker)))"
-    command = `$(Base.julia_cmd()) --startup-file=no --project=$example_directory -e $expression`
+    command = `$(Base.julia_cmd()) --startup-file=no --compiled-modules=no --project=$example_directory -e $expression`
     command = addenv(command, "JULIA_LOAD_PATH" => example_load_path, "GKSwstype" => "100")
 
     @test !ispath(output_directory)
