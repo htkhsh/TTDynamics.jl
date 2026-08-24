@@ -1,50 +1,11 @@
-using LinearAlgebra
-
 """
-    periodic_holstein_hamiltonian(site_energies, hopping)
+    HolsteinCurrentCorrelationConfig(; kwargs...)
 
-Construct the single-excitation Hamiltonian for a periodic Holstein chain.
+Store the physical and numerical settings for the periodic Holstein HEOM-TT
+equilibration and current-correlation workflow. `brownian_damping_cm` is
+QFiND's Brownian damping parameter `Γ_Q`; its poles decay at `Γ_Q / 2`.
 """
-function periodic_holstein_hamiltonian(site_energies::AbstractVector,
-                                       hopping::Real)
-    site_count = length(site_energies)
-    site_count >= 2 || throw(ArgumentError("site_energies must contain at least two sites"))
-    hopping >= 0 || throw(ArgumentError("hopping must be nonnegative"))
-
-    H = Matrix(Diagonal(ComplexF64.(site_energies)))
-    for site in 1:(site_count - 1)
-        H[site, site + 1] = H[site + 1, site] = -hopping
-    end
-    if site_count > 2
-        H[site_count, 1] = H[1, site_count] = -hopping
-    end
-    return H
-end
-
-"""
-    site_projectors(site_count)
-
-Return one projector onto each site in a site-local basis.
-"""
-function site_projectors(site_count::Integer)
-    site_count >= 2 || throw(ArgumentError("site_count must be at least two"))
-    projectors = Matrix{ComplexF64}[]
-    for site in 1:site_count
-        projector = zeros(ComplexF64, site_count, site_count)
-        projector[site, site] = 1
-        push!(projectors, projector)
-    end
-    return projectors
-end
-
-"""
-    HolsteinConfig(; kwargs...)
-
-Store the physical and numerical settings for a periodic Holstein HEOM-TT run.
-`brownian_damping_cm` is QFiND's Brownian damping parameter `Γ_Q`; its poles
-decay at `Γ_Q / 2` (100 cm⁻¹ for the default `Γ_Q = 200 cm⁻¹`).
-"""
-struct HolsteinConfig
+struct HolsteinCurrentCorrelationConfig
     site_count::Int
     site_energies_cm::Vector{Float64}
     hopping_cm::Float64
@@ -73,55 +34,38 @@ struct HolsteinConfig
     progress_interval::Int
 end
 
-function HolsteinConfig(;
-    site_count=5,
-    site_energies_cm=zeros(site_count),
-    hopping_cm=400.0,
-    brownian_frequency_cm=1400.0,
-    brownian_damping_cm=200.0, # QFiND Γ_Q; default pole decay is 100 cm⁻¹
-    reorganization_energy_cm=600.0,
-    temperature_K=300.0,
-    initial_site=1,
-    final_time_fs=100.0,
-    time_step_fs=1.0,
-    pade_order=8,
-    tpsd_tolerance=5e-2,
-    pade_type=:Nm1,
-    validation_final_time_fs=100.0,
-    validation_sample_count=400,
-    bcf_upper_bound_cm=10_000.0,
-    hierarchy_local_size=4,
-    temporal_basis_size=3,
-    tamen_tolerance=1e-2,
-    operator_tolerance=1e-10,
-    state_rounding_tolerance=1e-10,
-    sweep_count=5,
-    local_iterations=10,
-    kick_rank=4,
-    progress_interval=10,
-)
-    config = HolsteinConfig(
+function HolsteinCurrentCorrelationConfig(; site_count=5, site_energies_cm=zeros(site_count),
+    hopping_cm=400.0, brownian_frequency_cm=1400.0,
+    brownian_damping_cm=200.0, reorganization_energy_cm=600.0,
+    temperature_K=300.0, initial_site=1, final_time_fs=500.0,
+    time_step_fs=1.0, pade_order=8, tpsd_tolerance=2e-2,
+    pade_type=:Nm1, validation_final_time_fs=100.0,
+    validation_sample_count=200, bcf_upper_bound_cm=10_000.0,
+    hierarchy_local_size=4, temporal_basis_size=3, tamen_tolerance=2e-2,
+    operator_tolerance=1e-10, state_rounding_tolerance=1e-10,
+    sweep_count=3, local_iterations=5, kick_rank=4,
+    progress_interval=10)
+    config = HolsteinCurrentCorrelationConfig(
         Int(site_count), Float64.(site_energies_cm), Float64(hopping_cm),
         Float64(brownian_frequency_cm), Float64(brownian_damping_cm),
         Float64(reorganization_energy_cm), Float64(temperature_K),
         Int(initial_site), Float64(final_time_fs), Float64(time_step_fs),
         Int(pade_order), Float64(tpsd_tolerance), Symbol(pade_type),
         Float64(validation_final_time_fs), Int(validation_sample_count),
-        Float64(bcf_upper_bound_cm),
-        Int(hierarchy_local_size), Int(temporal_basis_size),
-        Float64(tamen_tolerance), Float64(operator_tolerance),
-        Float64(state_rounding_tolerance), Int(sweep_count),
-        Int(local_iterations), Int(kick_rank), Int(progress_interval),
-    )
-    return validate_config(config)
+        Float64(bcf_upper_bound_cm), Int(hierarchy_local_size),
+        Int(temporal_basis_size), Float64(tamen_tolerance),
+        Float64(operator_tolerance), Float64(state_rounding_tolerance),
+        Int(sweep_count), Int(local_iterations), Int(kick_rank),
+        Int(progress_interval))
+    return validate_current_correlation_config(config)
 end
 
 """
-    validate_config(config)
+    validate_current_correlation_config(config)
 
 Validate physical and numerical settings and return `config` unchanged.
 """
-function validate_config(config::HolsteinConfig)
+function validate_current_correlation_config(config::HolsteinCurrentCorrelationConfig)
     config.site_count >= 2 || throw(ArgumentError("site_count must be at least two"))
     length(config.site_energies_cm) == config.site_count ||
         throw(ArgumentError("site_energies_cm length must equal site_count"))

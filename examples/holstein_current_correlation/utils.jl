@@ -168,7 +168,7 @@ end
 Describe a saved twin-space Holstein HEOM equilibrium state using TOML-safe
 values. Complex TPSD data is represented by parallel real and imaginary arrays.
 """
-function equilibrium_metadata(config::HolsteinConfig, decomposition, problem,
+function equilibrium_metadata(config::HolsteinCurrentCorrelationConfig, decomposition, problem,
                               state::TTTensor; equilibration_time_fs)::Dict{String,Any}
     metadata = Dict{String,Any}(
         "identifier" => _EQUILIBRIUM_METADATA_IDENTIFIER,
@@ -259,7 +259,7 @@ end
 Reject metadata or a TT state that is incompatible with the reconstructed
 twin-space Holstein HEOM problem.
 """
-function validate_equilibrium_state(state, metadata, config::HolsteinConfig,
+function validate_equilibrium_state(state, metadata, config::HolsteinCurrentCorrelationConfig,
                                     decomposition, problem;
                                     rtol::Real=1e-12, atol::Real=1e-14)::TTTensor
     rtol >= 0 || throw(ArgumentError("rtol must be nonnegative"))
@@ -348,7 +348,7 @@ end
 
 Return the Hermitian particle-current operator for the periodic Holstein chain.
 """
-function periodic_current_operator(config::HolsteinConfig)::Matrix{ComplexF64}
+function periodic_current_operator(config::HolsteinCurrentCorrelationConfig)::Matrix{ComplexF64}
     N = config.site_count
     N >= 2 || throw(ArgumentError("site_count must be at least two"))
     isfinite(config.hopping_cm) || throw(ArgumentError("hopping_cm must be finite"))
@@ -373,7 +373,7 @@ end
 Embed the periodic current as a ket-side HEOM-TT action and as a root-space
 observable in the canonical `[ket, bra, hierarchy...]` layout.
 """
-function build_current_heom_operators(config::HolsteinConfig, problem)
+function build_current_heom_operators(config::HolsteinCurrentCorrelationConfig, problem)
     current = periodic_current_operator(config)
     N = config.site_count
     I_sys = Matrix{ComplexF64}(I, N, N)
@@ -414,7 +414,7 @@ end
 
 Advance one Crank-Nicolson tAMEn step with the Holstein solver settings.
 """
-function propagate_cn_step(rho::TTTensor, liouvillian::TTMatrix, config::HolsteinConfig;
+function propagate_cn_step(rho::TTTensor, liouvillian::TTMatrix, config::HolsteinCurrentCorrelationConfig;
                            trace_observable=nothing)::TTTensor
     options = Dict(
         :verb => 0,
@@ -445,7 +445,7 @@ end
 Run a fixed number of Crank-Nicolson steps, returning the final state together
 with arbitrary values returned by `observe(step, time, state)`.
 """
-function propagate_fixed_steps(rho::TTTensor, problem, config::HolsteinConfig,
+function propagate_fixed_steps(rho::TTTensor, problem, config::HolsteinCurrentCorrelationConfig,
                                step_count::Integer; observe)
     step_count >= 0 || throw(ArgumentError("step_count must be nonnegative"))
     observations = [observe(0, 0.0, rho)]
@@ -503,7 +503,7 @@ function measure_heom_state(rho::TTTensor, trace_observable::TTTensor,
     )
 end
 
-function _equilibration_step_count(config::HolsteinConfig,
+function _equilibration_step_count(config::HolsteinCurrentCorrelationConfig,
                                    equilibration_time_fs::Real)::Int
     isfinite(equilibration_time_fs) && equilibration_time_fs > 0 ||
         throw(ArgumentError("equilibration_time_fs must be finite and positive"))
@@ -523,10 +523,10 @@ end
 Propagate a localized Holstein HEOM state for an exact number of time steps,
 recording root-space diagnostics and returning a trace-normalized final state.
 """
-function run_equilibration(config::HolsteinConfig, problem;
+function run_equilibration(config::HolsteinCurrentCorrelationConfig, problem;
                            initial_state=nothing,
                            equilibration_time_fs::Real=1000.0)::NamedTuple
-    validate_config(config)
+    validate_current_correlation_config(config)
     step_count = _equilibration_step_count(config, equilibration_time_fs)
     state = isnothing(initial_state) ? build_initial_state(
         problem.system,
@@ -616,7 +616,7 @@ function write_equilibration_csv(path::AbstractString, result;
     end
 end
 
-function _correlation_step_count(config::HolsteinConfig,
+function _correlation_step_count(config::HolsteinCurrentCorrelationConfig,
                                  correlation_time_fs::Real)::Int
     isfinite(correlation_time_fs) && correlation_time_fs >= 0 ||
         throw(ArgumentError("correlation_time_fs must be finite and nonnegative"))
@@ -654,10 +654,10 @@ Propagate the unnormalized current source `J * rho_eq` and record the
 unsymmetrized correlation `Tr[J exp(Lt)(J rho_eq)]` at every fixed time step.
 """
 function run_current_correlation(equilibrium_state::TTTensor,
-                                 config::HolsteinConfig, problem;
+                                 config::HolsteinCurrentCorrelationConfig, problem;
                                  correlation_time_fs::Real=200.0,
                                  progress_callback=nothing)::NamedTuple
-    validate_config(config)
+    validate_current_correlation_config(config)
     step_count = _correlation_step_count(config, correlation_time_fs)
     operators = build_current_heom_operators(config, problem)
     exact_source = operators.left_action * equilibrium_state

@@ -1,35 +1,15 @@
 using TTDynamics
 
-if !isdefined(@__MODULE__, :HolsteinConfig)
-    include("../holstein/utils.jl")
-end
-if !isdefined(@__MODULE__, :run_equilibration)
-    include("utils.jl")
-end
+isdefined(@__MODULE__, :HolsteinCurrentCorrelationConfig) || include("config.jl")
+isdefined(@__MODULE__, :build_current_correlation_model) || include("model.jl")
+isdefined(@__MODULE__, :run_equilibration) || include("utils.jl")
 
-if !isdefined(@__MODULE__, :DEFAULT_CONFIG)
-    const DEFAULT_CONFIG = HolsteinConfig()
-end
+const DEFAULT_CURRENT_CORRELATION_CONFIG = HolsteinCurrentCorrelationConfig()
 
-function _load_holstein_builders()
-    if !isdefined(@__MODULE__, :decompose_brownian_bcf) ||
-       !isdefined(@__MODULE__, :build_holstein_heomtt)
-        include(joinpath(@__DIR__, "..", "holstein", "holstein_brownian_heomtt.jl"))
-    end
-    return nothing
-end
-
-function _default_decomposition_builder(config)
-    _load_holstein_builders()
-    builder = Base.invokelatest(getfield, @__MODULE__, :decompose_brownian_bcf)
-    return Base.invokelatest(builder, config)
-end
-
-function _default_problem_builder(config, decomposition)
-    _load_holstein_builders()
-    builder = Base.invokelatest(getfield, @__MODULE__, :build_holstein_heomtt)
-    return Base.invokelatest(builder, config, decomposition)
-end
+_default_decomposition_builder(config::HolsteinCurrentCorrelationConfig) =
+    decompose_current_correlation_bath(config)
+_default_problem_builder(config::HolsteinCurrentCorrelationConfig, decomposition) =
+    build_current_correlation_model(config, decomposition)
 
 function _load_equilibration_plotter()
     if !isdefined(@__MODULE__, :_save_equilibration_population_plot)
@@ -105,7 +85,7 @@ population plot. For a non-overwrite save, a publication failure removes every
 newly written output. An overwrite save cannot restore replaced outputs; use a
 fresh output directory for production replacement runs.
 """
-function save_equilibration_outputs(config::HolsteinConfig, decomposition, problem, result;
+function save_equilibration_outputs(config::HolsteinCurrentCorrelationConfig, decomposition, problem, result;
                                     output_directory::AbstractString=DEFAULT_EQUILIBRATION_OUTPUT_DIRECTORY,
                                     equilibration_time_fs::Real=DEFAULT_EQUILIBRATION_TIME_FS,
                                     overwrite::Bool=false,
@@ -154,7 +134,7 @@ function save_equilibration_outputs(config::HolsteinConfig, decomposition, probl
 end
 
 """
-    equilibrate_main(config=DEFAULT_CONFIG;
+    equilibrate_main(config=DEFAULT_CURRENT_CORRELATION_CONFIG;
                      equilibration_time_fs=DEFAULT_EQUILIBRATION_TIME_FS,
                      output_directory=DEFAULT_EQUILIBRATION_OUTPUT_DIRECTORY,
                      overwrite=true) -> NamedTuple
@@ -163,7 +143,7 @@ Build the default Holstein HEOM problem, equilibrate it for 1000 fs by
 default, and save a binary state with matching TOML and CSV diagnostics plus
 an automatic site-population PNG.
 """
-function equilibrate_main(config=DEFAULT_CONFIG;
+function equilibrate_main(config=DEFAULT_CURRENT_CORRELATION_CONFIG;
                           equilibration_time_fs::Real=DEFAULT_EQUILIBRATION_TIME_FS,
                           output_directory::AbstractString=DEFAULT_EQUILIBRATION_OUTPUT_DIRECTORY,
                           overwrite::Bool=true,
@@ -171,7 +151,7 @@ function equilibrate_main(config=DEFAULT_CONFIG;
                           problem_builder=_default_problem_builder,
                           equilibration_runner=run_equilibration,
                           plotter=_default_equilibration_plotter)::NamedTuple
-    validate_config(config)
+    validate_current_correlation_config(config)
     _equilibration_step_count(config, equilibration_time_fs)
     decomposition = decomposition_builder(config)
     problem = problem_builder(config, decomposition)

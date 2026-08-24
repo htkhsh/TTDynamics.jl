@@ -113,7 +113,7 @@ function save_current_correlation_outputs(
 end
 
 """
-    current_correlation_main(config=DEFAULT_CONFIG;
+    current_correlation_main(config=DEFAULT_CURRENT_CORRELATION_CONFIG;
                              correlation_time_fs=DEFAULT_CORRELATION_TIME_FS,
                              output_directory=DEFAULT_CURRENT_CORRELATION_OUTPUT_DIRECTORY,
                              overwrite=true) -> NamedTuple
@@ -121,7 +121,7 @@ end
 Reload a validated fixed-time equilibrium state and calculate the
 unsymmetrized current correlation for 200 fs by default.
 """
-function current_correlation_main(config=DEFAULT_CONFIG;
+function current_correlation_main(config=DEFAULT_CURRENT_CORRELATION_CONFIG;
                                   correlation_time_fs::Real=DEFAULT_CORRELATION_TIME_FS,
                                   output_directory::AbstractString=DEFAULT_CURRENT_CORRELATION_OUTPUT_DIRECTORY,
                                   overwrite::Bool=true,
@@ -131,7 +131,7 @@ function current_correlation_main(config=DEFAULT_CONFIG;
                                   plotter=_default_current_correlation_plotter,
                                   rank_plotter=_default_current_correlation_rank_plotter,
                                   progress_io::IO=stdout)::NamedTuple
-    validate_config(config)
+    validate_current_correlation_config(config)
     _correlation_step_count(config, correlation_time_fs)
     paths = _current_correlation_output_paths(output_directory)
     _require_equilibrium_inputs(paths)

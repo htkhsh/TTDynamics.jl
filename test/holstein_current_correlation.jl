@@ -5,12 +5,33 @@ using TTDynamics
 using TTSolver
 using HEOMKit
 
-if !isdefined(@__MODULE__, :HolsteinConfig)
-    include("../examples/holstein/utils.jl")
-end
+include("../examples/holstein_current_correlation/config.jl")
+include("../examples/holstein_current_correlation/model.jl")
 include("../examples/holstein_current_correlation/utils.jl")
 include("../examples/holstein_current_correlation/equilibrate.jl")
 include("../examples/holstein_current_correlation/current_correlation.jl")
+
+@testset "Holstein current-correlation local ownership" begin
+    @test DEFAULT_CURRENT_CORRELATION_CONFIG isa HolsteinCurrentCorrelationConfig
+    legacy_config_name = Symbol("Holstein", "Config")
+    legacy_module = Module()
+    Core.eval(
+        legacy_module,
+        Meta.parse("struct " * String(legacy_config_name) * " end"),
+    )
+    @test HolsteinCurrentCorrelationConfig !==
+          getfield(legacy_module, legacy_config_name)
+    if isdefined(@__MODULE__, legacy_config_name)
+        @test HolsteinCurrentCorrelationConfig !==
+              getfield(@__MODULE__, legacy_config_name)
+    end
+    cross_example_path = joinpath("..", "holstein")
+    for file in ("equilibrate.jl", "current_correlation.jl", "utils.jl", "model.jl")
+        source = read(joinpath(@__DIR__, "..", "examples",
+                               "holstein_current_correlation", file), String)
+        @test !occursin(cross_example_path, source)
+    end
+end
 
 @testset "Holstein equilibration plotting loads lazily" begin
     @test !isdefined(@__MODULE__, :_save_equilibration_population_plot)
@@ -28,26 +49,21 @@ end
 end
 
 function current_correlation_problem(config)
-    H = periodic_holstein_hamiltonian(config.site_energies_cm, config.hopping_cm) *
-        HEOMKit.icm2ifs
-    baths = [
-        BathExp(ComplexF64[0.4], ComplexF64[0.03 - 0.02im], projector)
-        for projector in site_projectors(config.site_count)
-    ]
-    system = HEOMTTSystem(H, NoiseExp(baths), config.hierarchy_local_size)
-    liouvillian, trace_observable, population_observables =
-        build_heom_liouvillian(system; tol=config.operator_tolerance)
-    return (; system, liouvillian, trace_observable, population_observables)
+    decomposition = (
+        exponents=ComplexF64[0.4],
+        coefficients=ComplexF64[0.03 - 0.02im],
+    )
+    return build_current_correlation_model(config, decomposition)
 end
 
 function unchecked_holstein_config(config; site_count=config.site_count,
                                    hopping_cm=config.hopping_cm,
                                    progress_interval=config.progress_interval)
-    values = Any[getfield(config, index) for index in 1:fieldcount(HolsteinConfig)]
+    values = Any[getfield(config, index) for index in 1:fieldcount(HolsteinCurrentCorrelationConfig)]
     values[1] = site_count
     values[3] = hopping_cm
     values[25] = progress_interval
-    return HolsteinConfig(values...)
+    return HolsteinCurrentCorrelationConfig(values...)
 end
 
 function metadata_error(f)
@@ -61,7 +77,7 @@ function metadata_error(f)
 end
 
 function metadata_fixture()
-    config = HolsteinConfig(
+    config = HolsteinCurrentCorrelationConfig(
         site_count=2,
         site_energies_cm=[10.0, -5.0],
         hopping_cm=2.0,
@@ -86,7 +102,7 @@ function metadata_fixture()
 end
 
 function equilibration_fixture()
-    config = HolsteinConfig(
+    config = HolsteinCurrentCorrelationConfig(
         site_count=2,
         site_energies_cm=zeros(2),
         hopping_cm=2.0,
@@ -117,7 +133,7 @@ function equilibration_fixture()
 end
 
 @testset "Holstein current correlation utilities" begin
-    config = HolsteinConfig(
+    config = HolsteinCurrentCorrelationConfig(
         site_count=3,
         site_energies_cm=zeros(3),
         hopping_cm=2.0,
@@ -133,7 +149,7 @@ end
     @test current[3, 1] == -1im * scale
     @test diag(current) == zeros(3)
 
-    config2 = HolsteinConfig(
+    config2 = HolsteinCurrentCorrelationConfig(
         site_count=2,
         site_energies_cm=zeros(2),
         hopping_cm=2.0,
@@ -160,7 +176,7 @@ end
     @test metadata["version"] == 1
     @test metadata["heom_representation"] == "twin-space-v1"
     @test metadata["equilibration_time_fs"] == 1000.0
-    for field in fieldnames(HolsteinConfig)
+    for field in fieldnames(HolsteinCurrentCorrelationConfig)
         expected = field === :pade_type ? string(config.pade_type) : getfield(config, field)
         @test metadata[String(field)] == expected
     end
@@ -266,7 +282,7 @@ end
 end
 
 @testset "Holstein current twin-space operators" begin
-    config = HolsteinConfig(
+    config = HolsteinCurrentCorrelationConfig(
         site_count=2,
         site_energies_cm=zeros(2),
         hopping_cm=2.0,
@@ -312,7 +328,7 @@ end
 end
 
 @testset "Holstein state propagation and measurements" begin
-    config = HolsteinConfig(
+    config = HolsteinCurrentCorrelationConfig(
         site_count=2,
         site_energies_cm=zeros(2),
         hopping_cm=2.0,
@@ -391,9 +407,7 @@ end
 @testset "Holstein lazy builders are world-age safe" begin
     mktempdir() do directory
         fixture_directory = joinpath(directory, "fixture")
-        holstein_directory = joinpath(directory, "holstein")
         mkpath(fixture_directory)
-        mkpath(holstein_directory)
 
         equilibrate_source = joinpath(
             @__DIR__,
@@ -404,15 +418,21 @@ end
         )
         cp(equilibrate_source, joinpath(fixture_directory, "equilibrate.jl"))
         write(
-            joinpath(holstein_directory, "holstein_brownian_heomtt.jl"),
+            joinpath(fixture_directory, "config.jl"),
             """
-            function decompose_brownian_bcf(config)
-                config isa HolsteinConfig || error("unexpected configuration")
+            struct HolsteinCurrentCorrelationConfig end
+            """,
+        )
+        write(
+            joinpath(fixture_directory, "model.jl"),
+            """
+            function decompose_current_correlation_bath(config)
+                config isa HolsteinCurrentCorrelationConfig || error("unexpected configuration")
                 return :decomposition
             end
 
-            function build_holstein_heomtt(config, decomposition)
-                config isa HolsteinConfig || error("unexpected configuration")
+            function build_current_correlation_model(config, decomposition)
+                config isa HolsteinCurrentCorrelationConfig || error("unexpected configuration")
                 decomposition === :decomposition || error("unexpected decomposition")
                 return :problem
             end
@@ -425,8 +445,6 @@ end
             """
             pushfirst!(LOAD_PATH, $(repr(joinpath(@__DIR__, ".."))))
 
-            struct HolsteinConfig end
-            const DEFAULT_CONFIG = HolsteinConfig()
             run_equilibration(args...; kwargs...) = nothing
 
             include(joinpath(@__DIR__, "equilibrate.jl"))
@@ -436,7 +454,7 @@ end
                 return _default_problem_builder(config, decomposition)
             end
 
-            @assert invoke_default_builders(HolsteinConfig()) === :problem
+            @assert invoke_default_builders(HolsteinCurrentCorrelationConfig()) === :problem
             """,
         )
         command = `$(Base.julia_cmd()) --startup-file=no --depwarn=error $fixture_script`
@@ -474,8 +492,10 @@ end
             """
             pushfirst!(LOAD_PATH, $(repr(joinpath(@__DIR__, ".."))))
 
-            struct HolsteinConfig end
-            const DEFAULT_CONFIG = HolsteinConfig()
+            struct HolsteinCurrentCorrelationConfig end
+            const DEFAULT_CURRENT_CORRELATION_CONFIG = HolsteinCurrentCorrelationConfig()
+            decompose_current_correlation_bath(args...; kwargs...) = nothing
+            build_current_correlation_model(args...; kwargs...) = nothing
             run_equilibration(args...; kwargs...) = nothing
 
             include(joinpath(@__DIR__, "equilibrate.jl"))
@@ -501,7 +521,7 @@ end
     fixture = equilibration_fixture()
     (; config, decomposition, problem, state) = fixture
 
-    @test DEFAULT_CONFIG isa HolsteinConfig
+    @test DEFAULT_CURRENT_CORRELATION_CONFIG isa HolsteinCurrentCorrelationConfig
     result = run_equilibration(
         config,
         problem;
