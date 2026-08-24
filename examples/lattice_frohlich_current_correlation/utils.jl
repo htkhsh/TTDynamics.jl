@@ -12,6 +12,12 @@ using TTDynamics
 using TTSolver
 using HEOMKit: icm2ifs
 
+function _validate_lattice_frohlich_particle_current(current::AbstractMatrix)::Nothing
+    ishermitian(current) ||
+        error("internal error: lattice Fröhlich particle current must be Hermitian")
+    return nothing
+end
+
 """
     lattice_frohlich_particle_current(config) -> Matrix{ComplexF64}
 
@@ -33,6 +39,7 @@ function lattice_frohlich_particle_current(
         current[1, N] += im * scale
         current[N, 1] -= im * scale
     end
+    _validate_lattice_frohlich_particle_current(current)
     return current
 end
 

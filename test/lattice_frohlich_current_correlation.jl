@@ -27,8 +27,50 @@ include("../examples/lattice_frohlich_current_correlation/current_correlation.jl
     )
     @test fieldnames(typeof(config)) == keys(expected)
     @test all(field -> getproperty(config, field) == getproperty(expected, field), keys(expected))
-    @test_throws ArgumentError LatticeFrohlichCurrentCorrelationConfig(site_count=1)
-    @test_throws ArgumentError LatticeFrohlichCurrentCorrelationConfig(temporal_basis_size=4)
+    invalid_configurations = (
+        "site count" => () -> LatticeFrohlichCurrentCorrelationConfig(site_count=1),
+        "site energy count" => () -> LatticeFrohlichCurrentCorrelationConfig(
+            site_count=3, site_energies_cm=zeros(2),
+        ),
+        "finite site energies" => () -> LatticeFrohlichCurrentCorrelationConfig(
+            site_energies_cm=[0.0, NaN, 0.0, 0.0, 0.0],
+        ),
+        "initial site" => () -> LatticeFrohlichCurrentCorrelationConfig(initial_site=0),
+        "nonnegative hopping" => () -> LatticeFrohlichCurrentCorrelationConfig(
+            hopping_cm=-1.0,
+        ),
+        "finite scales" => () -> LatticeFrohlichCurrentCorrelationConfig(
+            temperature_K=Inf,
+        ),
+        "positive physical scales" => () -> LatticeFrohlichCurrentCorrelationConfig(
+            brownian_frequency_cm=0.0,
+        ),
+        "positive numerical scales" => () -> LatticeFrohlichCurrentCorrelationConfig(
+            operator_tolerance=0.0,
+        ),
+        "underdamped Brownian poles" => () -> LatticeFrohlichCurrentCorrelationConfig(
+            brownian_frequency_cm=100.0, brownian_damping_cm=200.0,
+        ),
+        "positive Pade order" => () -> LatticeFrohlichCurrentCorrelationConfig(pade_order=0),
+        "Pade type" => () -> LatticeFrohlichCurrentCorrelationConfig(pade_type=:invalid),
+        "validation samples" => () -> LatticeFrohlichCurrentCorrelationConfig(
+            validation_sample_count=1,
+        ),
+        "solver controls" => () -> LatticeFrohlichCurrentCorrelationConfig(
+            hierarchy_local_size=0,
+        ),
+        "temporal basis" => () -> LatticeFrohlichCurrentCorrelationConfig(
+            temporal_basis_size=4,
+        ),
+        "integral time grid" => () -> LatticeFrohlichCurrentCorrelationConfig(
+            final_time_fs=1.5, time_step_fs=1.0,
+        ),
+    )
+    for (description, construct) in invalid_configurations
+        @testset "$description" begin
+            @test_throws ArgumentError construct()
+        end
+    end
 end
 
 @testset "Lattice Frohlich equilibrium checkpoint publication" begin
@@ -77,6 +119,11 @@ end
         "exponents_real" => [0.5],
         "hierarchy_sizes" => [3],
         "identifier" => "other",
+        "hopping_cm" => config.hopping_cm + 1.0,
+        "coefficients_imag" => [imag(first(decomposition.coefficients)) + 0.1],
+        "version" => 2,
+        "heom_representation" => "vectorized-v0",
+        "tt_dimensions" => [3, 3, 2, 2, 3],
     )
         changed = deepcopy(metadata)
         changed[field] = replacement
@@ -84,6 +131,17 @@ end
             state, changed, config, decomposition, full_problem,
         )
     end
+
+    wrong_dimension_state = TTTensor([
+        reshape(Matrix{ComplexF64}(I, 3, 3), 1, 3, 3),
+        reshape(ComplexF64[1 0 0; 0 0 0; 0 0 0], 3, 3, 1),
+        reshape(ComplexF64[1, 0], 1, 2, 1),
+        reshape(ComplexF64[1, 0], 1, 2, 1),
+        reshape(ComplexF64[1, 0, 0], 1, 3, 1),
+    ])
+    @test_throws ArgumentError validate_lattice_frohlich_equilibrium_state(
+        wrong_dimension_state, metadata, config, decomposition, full_problem,
+    )
 end
 
 @testset "Lattice Frohlich equilibration output orchestration" begin
@@ -186,16 +244,56 @@ end
 end
 
 @testset "Lattice Frohlich current model" begin
+    @test periodic_lattice_frohlich_distance(1, 5, 5) == 1
+    @test periodic_lattice_frohlich_distance(1, 4, 5) == 2
     @test periodic_lattice_frohlich_distance(1, 3, 4) == 2
     @test periodic_lattice_frohlich_distance(1, 4, 4) == 1
+    @test periodic_lattice_frohlich_distance(1, 2, 2) == 1
+
+    @test periodic_lattice_frohlich_current_hamiltonian([1.0, 2.0], 3.0) ==
+          ComplexF64[1 -3; -3 2]
+    @test periodic_lattice_frohlich_current_hamiltonian([1.0, 2.0, 3.0, 4.0], 5.0) ==
+          ComplexF64[1 -5 0 -5; -5 2 -5 0; 0 -5 3 -5; -5 0 -5 4]
+
     weights = normalized_lattice_frohlich_current_kernel(4)
     @test size(weights) == (4, 4)
     @test all(n -> sum(abs2, weights[:, n]) ≈ 1, 1:4)
     @test weights ≈ transpose(weights)
     @test weights[:, 2] ≈ circshift(weights[:, 1], 1)
+    @test_throws ArgumentError normalized_lattice_frohlich_current_kernel(
+        3; kernel=_ -> -1.0,
+    )
+    @test_throws ArgumentError normalized_lattice_frohlich_current_kernel(
+        3; kernel=_ -> Inf,
+    )
+    @test_throws ArgumentError normalized_lattice_frohlich_current_kernel(
+        3; kernel=_ -> 0.0,
+    )
     operators = lattice_frohlich_current_coupling_operators(4)
     @test all(isdiag, operators)
     @test all(ishermitian, operators)
+    @test all(1:4) do bath
+        diag(operators[mod1(bath + 1, 4)]) ≈ circshift(diag(operators[bath]), 1)
+    end
+
+    bath_config = LatticeFrohlichCurrentCorrelationConfig(
+        site_count=2,
+        site_energies_cm=zeros(2),
+        final_time_fs=1.0,
+        pade_order=1,
+        tpsd_tolerance=0.1,
+        validation_final_time_fs=1.0,
+        validation_sample_count=3,
+        hierarchy_local_size=2,
+    )
+    decomposition = decompose_lattice_frohlich_current_bath(bath_config)
+    @test !isempty(decomposition.exponents)
+    @test length(decomposition.exponents) == length(decomposition.coefficients)
+    @test all(isfinite, decomposition.exponents)
+    @test all(isfinite, decomposition.coefficients)
+    @test all(>(0), real.(decomposition.exponents))
+    @test isfinite(decomposition.relative_error)
+    @test decomposition.relative_error <= bath_config.tpsd_tolerance
 end
 
 function lattice_frohlich_current_problem(config)
@@ -244,11 +342,43 @@ end
                                im*scale 0 -im*scale;
                                -im*scale im*scale 0]
     @test ishermitian(current)
+    hermiticity_error = try
+        _validate_lattice_frohlich_particle_current(ComplexF64[0 1; 0 0])
+        nothing
+    catch error
+        error
+    end
+    @test hermiticity_error isa ErrorException
+    @test occursin("Hermitian", sprint(showerror, hermiticity_error))
 
     problem = lattice_frohlich_current_problem(config)
     operators = build_lattice_frohlich_current_operators(config, problem)
     @test tt_dims(operators.left_action) == tt_dims(problem.liouvillian)
     @test tt_dims(operators.observable) == heom_tt_dimensions(problem.system)
+
+    exact_config = LatticeFrohlichCurrentCorrelationConfig(
+        site_count=2,
+        site_energies_cm=zeros(2),
+        hopping_cm=20.0,
+        final_time_fs=1.0,
+        hierarchy_local_size=2,
+        operator_tolerance=1e-14,
+        state_rounding_tolerance=1e-14,
+        tamen_tolerance=1e-12,
+    )
+    exact_problem = lattice_frohlich_current_problem(exact_config)
+    exact_operators = build_lattice_frohlich_current_operators(exact_config, exact_problem)
+    rho = ComplexF64[0.7 0.2 + 0.1im; -0.3 + 0.4im 0.3]
+    root_state = TTTensor([
+        reshape(Matrix{ComplexF64}(I, 2, 2), 1, 2, 2),
+        reshape(rho, 2, 2, 1),
+        [reshape(ComplexF64[1; zeros(n - 1)], 1, n, 1)
+         for n in exact_problem.system.nb]...,
+    ])
+    source = exact_operators.left_action * root_state
+    @test root_density_matrix(source, exact_problem.system) ≈ exact_operators.current * rho
+    @test tt_dot(exact_operators.observable, source) ≈
+          tr(exact_operators.current * exact_operators.current * rho)
 
     state = build_initial_state(problem.system, config.initial_site; tol=1e-14)
     result = run_lattice_frohlich_current_correlation(
@@ -263,6 +393,33 @@ end
         operators.observable,
         operators.left_action * state,
     )
+
+    loose_config = LatticeFrohlichCurrentCorrelationConfig(
+        site_count=2,
+        site_energies_cm=zeros(2),
+        hopping_cm=20.0,
+        final_time_fs=1.0,
+        hierarchy_local_size=2,
+        operator_tolerance=1e-14,
+        state_rounding_tolerance=0.9,
+        tamen_tolerance=1e-12,
+    )
+    loose_problem = lattice_frohlich_current_problem(loose_config)
+    loose_operators = build_lattice_frohlich_current_operators(loose_config, loose_problem)
+    loose_result = run_lattice_frohlich_current_correlation(
+        root_state,
+        loose_config,
+        loose_problem;
+        correlation_time_fs=0.0,
+    )
+    dense_exact_correlation = tr(
+        loose_operators.current * loose_operators.current * rho,
+    )
+    @test root_density_matrix(loose_result.state, loose_problem.system) ≉
+          loose_operators.current * rho
+    @test loose_result.correlation[1] ≈ dense_exact_correlation
+    @test loose_result.correlation[1] ≉
+          tt_dot(loose_operators.observable, loose_result.state)
 end
 
 @testset "Lattice Frohlich propagation and progress" begin
@@ -343,6 +500,34 @@ end
           current.maximum_rank[[1, 3, 5, 6]]
     @test [record.mean_rank for record in current_records] ==
           current.mean_rank[[1, 3, 5, 6]]
+
+    physical_config = LatticeFrohlichCurrentCorrelationConfig(
+        site_count=2,
+        site_energies_cm=[0.0, 15.0],
+        hopping_cm=20.0,
+        final_time_fs=0.1,
+        time_step_fs=0.1,
+        hierarchy_local_size=2,
+        operator_tolerance=1e-14,
+        state_rounding_tolerance=1e-14,
+        tamen_tolerance=1e-10,
+        sweep_count=2,
+        local_iterations=2,
+        kick_rank=2,
+    )
+    physical_problem = lattice_frohlich_current_problem(physical_config)
+    physical_state = build_initial_state(
+        physical_problem.system, physical_config.initial_site; tol=1e-14,
+    )
+    physical = propagate_lattice_frohlich_fixed_steps(
+        physical_state,
+        physical_problem,
+        physical_config,
+        1;
+        observe=(step, time, rho) -> (; step, time, norm=norm(tt_full(rho))),
+    )
+    @test all(observation -> isfinite(observation.norm), physical.observations)
+    @test norm(tt_full(physical.state) - tt_full(physical_state)) > 1e-12
 end
 
 @testset "Lattice Frohlich reloaded current-correlation outputs" begin
@@ -649,30 +834,56 @@ end
     equilibrate_script = repr(joinpath(example_directory, "equilibrate.jl"))
     correlation_script = repr(joinpath(example_directory, "current_correlation.jl"))
     marker = "lattice-frohlich-current-import-ok"
-    expression = "include($equilibrate_script); include($correlation_script); " *
-                 "@assert DEFAULT_LATTICE_FROHLICH_CORRELATION_TIME_FS == 200.0; " *
-                 "print($(repr(marker)))"
-    command = `$(Base.julia_cmd()) --startup-file=no --compiled-modules=no --project=$example_directory -e $expression`
-    command = addenv(command, "JULIA_LOAD_PATH" => load_path, "GKSwstype" => "100")
-
-    output_directory = joinpath(example_directory, "output")
     snapshot_before = lattice_frohlich_current_example_snapshot(example_directory)
-    @test !ispath(output_directory)
-    mktempdir() do directory
-        stdout_buffer = IOBuffer()
-        stderr_buffer = IOBuffer()
-        process = run(
-            pipeline(Cmd(command; dir=directory); stdout=stdout_buffer, stderr=stderr_buffer);
-            wait=false,
+    mktempdir() do fixture_root
+        fixture_directory = joinpath(fixture_root, "lattice_frohlich_current_correlation")
+        mkpath(fixture_directory)
+        for source in (
+            "config.jl", "model.jl", "utils.jl", "equilibrate.jl",
+            "current_correlation.jl",
         )
-        wait(process)
-        stdout_text = String(take!(stdout_buffer))
-        stderr_text = String(take!(stderr_buffer))
-        success(process) || println(stderr, stderr_text)
-        @test success(process)
-        @test stdout_text == marker
-        @test isempty(readdir(directory))
+            cp(joinpath(example_directory, source), joinpath(fixture_directory, source))
+        end
+        output_directory = joinpath(fixture_directory, "output")
+        mkpath(output_directory)
+        write(joinpath(output_directory, "preexisting-user-output.txt"), "preserve me")
+        fixture_snapshot = lattice_frohlich_current_example_snapshot(fixture_directory)
+        fixture_equilibrate_script = repr(joinpath(fixture_directory, "equilibrate.jl"))
+        fixture_correlation_script = repr(joinpath(fixture_directory, "current_correlation.jl"))
+        expression =
+            "module RepositoryExample; " *
+            "include($equilibrate_script); include($correlation_script); " *
+            "@assert DEFAULT_LATTICE_FROHLICH_CORRELATION_TIME_FS == 200.0; end; " *
+            "module PreexistingOutputFixture; " *
+            "include($fixture_equilibrate_script); include($fixture_correlation_script); " *
+            "@assert DEFAULT_LATTICE_FROHLICH_CORRELATION_TIME_FS == 200.0; end; " *
+            "print($(repr(marker)))"
+        command = `$(Base.julia_cmd()) --startup-file=no --compiled-modules=no --project=$example_directory -e $expression`
+        command = addenv(
+            command, "JULIA_LOAD_PATH" => load_path, "GKSwstype" => "100",
+        )
+        mktempdir() do working_directory
+            stdout_buffer = IOBuffer()
+            stderr_buffer = IOBuffer()
+            process = run(
+                pipeline(
+                    Cmd(command; dir=working_directory);
+                    stdout=stdout_buffer,
+                    stderr=stderr_buffer,
+                );
+                wait=false,
+            )
+            wait(process)
+            stdout_text = String(take!(stdout_buffer))
+            stderr_text = String(take!(stderr_buffer))
+            success(process) || println(stderr, stderr_text)
+            @test success(process)
+            @test stdout_text == marker
+            @test isempty(readdir(working_directory))
+        end
+        @test lattice_frohlich_current_example_snapshot(example_directory) == snapshot_before
+        @test lattice_frohlich_current_example_snapshot(fixture_directory) == fixture_snapshot
+        @test read(joinpath(output_directory, "preexisting-user-output.txt"), String) ==
+              "preserve me"
     end
-    @test lattice_frohlich_current_example_snapshot(example_directory) == snapshot_before
-    @test !ispath(output_directory)
 end
