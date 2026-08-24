@@ -1,5 +1,13 @@
 using LinearAlgebra
 using Statistics
+# Resolve TOML by UUID so including this example from the package test project
+# does not make it an implicit package dependency.
+if !isdefined(@__MODULE__, :TOML)
+    @eval const TOML = Base.require(Base.PkgId(
+        Base.UUID("fa267f1f-6049-4f14-aa54-33bafae1ed76"), "TOML",
+    ))
+end
+using .TOML
 using TTDynamics
 using TTSolver
 using HEOMKit: icm2ifs
@@ -354,4 +362,270 @@ function run_lattice_frohlich_current_correlation(
         mean_rank=[observation.mean_rank for observation in observations],
         state=propagated.state,
     )
+end
+
+const _LATTICE_FROHLICH_METADATA_IDENTIFIER =
+    "TTDynamics.LatticeFrohlichEquilibrium"
+const _LATTICE_FROHLICH_METADATA_VERSION = 1
+const _LATTICE_FROHLICH_HEOM_REPRESENTATION = "twin-space-v1"
+
+const _LATTICE_FROHLICH_METADATA_INTEGER_FIELDS = (
+    :site_count, :initial_site, :pade_order, :validation_sample_count,
+    :hierarchy_local_size, :temporal_basis_size, :sweep_count,
+    :local_iterations, :kick_rank, :progress_interval,
+)
+const _LATTICE_FROHLICH_METADATA_FLOAT_FIELDS = (
+    :hopping_cm, :brownian_frequency_cm, :brownian_damping_cm,
+    :reorganization_energy_cm, :temperature_K, :final_time_fs, :time_step_fs,
+    :tpsd_tolerance, :validation_final_time_fs, :bcf_upper_bound_cm,
+    :tamen_tolerance, :operator_tolerance, :state_rounding_tolerance,
+)
+
+_lattice_frohlich_metadata_name(field::Symbol) = String(field)
+
+function _lattice_frohlich_metadata_value(metadata, field::AbstractString)
+    haskey(metadata, field) || throw(ArgumentError("$field is missing from equilibrium metadata"))
+    return metadata[field]
+end
+function _lattice_frohlich_metadata_string(metadata, field::AbstractString)
+    value = _lattice_frohlich_metadata_value(metadata, field)
+    value isa AbstractString || throw(ArgumentError("$field must be a string"))
+    return String(value)
+end
+function _lattice_frohlich_metadata_integer(metadata, field::AbstractString)
+    value = _lattice_frohlich_metadata_value(metadata, field)
+    value isa Integer && !(value isa Bool) || throw(ArgumentError("$field must be an integer"))
+    return Int(value)
+end
+function _lattice_frohlich_metadata_float(metadata, field::AbstractString)
+    value = _lattice_frohlich_metadata_value(metadata, field)
+    value isa Real && !(value isa Bool) && isfinite(value) ||
+        throw(ArgumentError("$field must be a finite real number"))
+    return Float64(value)
+end
+function _lattice_frohlich_metadata_float_vector(metadata, field::AbstractString)
+    value = _lattice_frohlich_metadata_value(metadata, field)
+    value isa AbstractVector || throw(ArgumentError("$field must be an array"))
+    all(x -> x isa Real && !(x isa Bool) && isfinite(x), value) ||
+        throw(ArgumentError("$field must contain finite real numbers"))
+    return Float64.(value)
+end
+function _lattice_frohlich_metadata_integer_vector(metadata, field::AbstractString)
+    value = _lattice_frohlich_metadata_value(metadata, field)
+    value isa AbstractVector || throw(ArgumentError("$field must be an array"))
+    all(x -> x isa Integer && !(x isa Bool), value) ||
+        throw(ArgumentError("$field must contain integers"))
+    return Int.(value)
+end
+function _validate_lattice_frohlich_toml_value(value, field::AbstractString)
+    if value isa AbstractString || value isa Bool || (value isa Integer && !(value isa Bool))
+        return nothing
+    elseif value isa AbstractFloat
+        isfinite(value) || throw(ArgumentError("$field must be finite"))
+    elseif value isa AbstractVector
+        for (index, element) in pairs(value)
+            _validate_lattice_frohlich_toml_value(element, "$field[$index]")
+        end
+    elseif value isa AbstractDict
+        for (key, element) in pairs(value)
+            key isa AbstractString || throw(ArgumentError("$field dictionary keys must be strings"))
+            _validate_lattice_frohlich_toml_value(element, "$field.$key")
+        end
+    else
+        throw(ArgumentError("$field is not TOML-safe metadata"))
+    end
+    return nothing
+end
+
+function _validate_lattice_frohlich_equilibrium_metadata(metadata)
+    metadata isa AbstractDict || throw(ArgumentError("metadata must be a dictionary"))
+    for (field, value) in pairs(metadata)
+        field isa AbstractString || throw(ArgumentError("metadata keys must be strings"))
+        _validate_lattice_frohlich_toml_value(value, String(field))
+    end
+    _lattice_frohlich_metadata_string(metadata, "identifier") == _LATTICE_FROHLICH_METADATA_IDENTIFIER || throw(ArgumentError("identifier is unsupported"))
+    _lattice_frohlich_metadata_integer(metadata, "version") == _LATTICE_FROHLICH_METADATA_VERSION || throw(ArgumentError("version is unsupported"))
+    _lattice_frohlich_metadata_string(metadata, "heom_representation") == _LATTICE_FROHLICH_HEOM_REPRESENTATION || throw(ArgumentError("heom_representation is unsupported"))
+    _lattice_frohlich_metadata_float(metadata, "equilibration_time_fs")
+    _lattice_frohlich_metadata_float_vector(metadata, "site_energies_cm")
+    for field in _LATTICE_FROHLICH_METADATA_FLOAT_FIELDS
+        _lattice_frohlich_metadata_float(metadata, _lattice_frohlich_metadata_name(field))
+    end
+    for field in _LATTICE_FROHLICH_METADATA_INTEGER_FIELDS
+        _lattice_frohlich_metadata_integer(metadata, _lattice_frohlich_metadata_name(field))
+    end
+    _lattice_frohlich_metadata_string(metadata, "pade_type")
+    exponent_real = _lattice_frohlich_metadata_float_vector(metadata, "exponents_real")
+    exponent_imag = _lattice_frohlich_metadata_float_vector(metadata, "exponents_imag")
+    coefficient_real = _lattice_frohlich_metadata_float_vector(metadata, "coefficients_real")
+    coefficient_imag = _lattice_frohlich_metadata_float_vector(metadata, "coefficients_imag")
+    length(exponent_real) == length(exponent_imag) || throw(ArgumentError("exponents arrays must have equal length"))
+    length(coefficient_real) == length(coefficient_imag) || throw(ArgumentError("coefficients arrays must have equal length"))
+    length(exponent_real) == length(coefficient_real) || throw(ArgumentError("TPSD arrays must have equal length"))
+    _lattice_frohlich_metadata_integer(metadata, "tpsd_term_count") == length(exponent_real) || throw(ArgumentError("tpsd_term_count must equal decomposition array length"))
+    weights = _lattice_frohlich_metadata_value(metadata, "frohlich_weights")
+    weights isa AbstractVector || throw(ArgumentError("frohlich_weights must be an array"))
+    all(row -> row isa AbstractVector && all(x -> x isa Real && !(x isa Bool) && isfinite(x), row), weights) || throw(ArgumentError("frohlich_weights must be finite rows"))
+    _lattice_frohlich_metadata_integer_vector(metadata, "hierarchy_sizes")
+    _lattice_frohlich_metadata_integer_vector(metadata, "tt_dimensions")
+    return nothing
+end
+
+function _lattice_frohlich_atomic_rename(oldpath::AbstractString, newpath::AbstractString)
+    status = ccall(:jl_fs_rename, Int32, (Cstring, Cstring), String(oldpath), String(newpath))
+    status < 0 && Base.uv_error("rename", status)
+    return nothing
+end
+
+function lattice_frohlich_equilibrium_metadata(config::LatticeFrohlichCurrentCorrelationConfig,
+                                                decomposition, problem, state::TTTensor;
+                                                equilibration_time_fs)::Dict{String,Any}
+    validate_lattice_frohlich_current_correlation_config(config)
+    metadata = Dict{String,Any}(
+        "identifier" => _LATTICE_FROHLICH_METADATA_IDENTIFIER,
+        "version" => _LATTICE_FROHLICH_METADATA_VERSION,
+        "heom_representation" => _LATTICE_FROHLICH_HEOM_REPRESENTATION,
+        "equilibration_time_fs" => Float64(equilibration_time_fs),
+        "site_count" => config.site_count,
+        "site_energies_cm" => copy(config.site_energies_cm),
+        "pade_type" => string(config.pade_type),
+        "exponents_real" => real.(decomposition.exponents),
+        "exponents_imag" => imag.(decomposition.exponents),
+        "coefficients_real" => real.(decomposition.coefficients),
+        "coefficients_imag" => imag.(decomposition.coefficients),
+        "tpsd_term_count" => length(decomposition.exponents),
+        "frohlich_weights" => [collect(row) for row in eachrow(problem.frohlich_weights)],
+        "hierarchy_sizes" => copy(problem.system.nb),
+        "tt_dimensions" => tt_dims(state),
+    )
+    for field in _LATTICE_FROHLICH_METADATA_FLOAT_FIELDS
+        metadata[_lattice_frohlich_metadata_name(field)] = getfield(config, field)
+    end
+    for field in _LATTICE_FROHLICH_METADATA_INTEGER_FIELDS
+        metadata[_lattice_frohlich_metadata_name(field)] = getfield(config, field)
+    end
+    _validate_lattice_frohlich_equilibrium_metadata(metadata)
+    return metadata
+end
+
+function write_lattice_frohlich_equilibrium_metadata(path::AbstractString, metadata;
+                                                     overwrite::Bool=false)::String
+    target = String(path)
+    _validate_lattice_frohlich_equilibrium_metadata(metadata)
+    !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
+    temporary_path = nothing
+    try
+        temporary_path, io = mktemp(dirname(abspath(target)))
+        try TOML.print(io, metadata) finally close(io) end
+        !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
+        if overwrite
+            _lattice_frohlich_atomic_rename(temporary_path, target); temporary_path = nothing
+        else
+            Base.Filesystem.hardlink(temporary_path, target)
+        end
+        return target
+    finally
+        temporary_path === nothing || rm(temporary_path; force=true)
+    end
+end
+
+function read_lattice_frohlich_equilibrium_metadata(path::AbstractString)::Dict{String,Any}
+    source = String(path)
+    isfile(source) || throw(ArgumentError("metadata file does not exist: $source"))
+    return TOML.parsefile(source)
+end
+
+function _lattice_frohlich_metadata_exact(field, actual, expected)
+    actual == expected || throw(ArgumentError("$field does not match the reconstructed problem"))
+end
+function _lattice_frohlich_metadata_approximate(field, actual, expected; rtol, atol)
+    isapprox(actual, expected; rtol, atol) || throw(ArgumentError("$field does not match the reconstructed problem"))
+end
+
+function validate_lattice_frohlich_equilibrium_state(
+    state, metadata, config::LatticeFrohlichCurrentCorrelationConfig, decomposition, problem;
+    rtol::Real=1e-12, atol::Real=1e-14,
+)::TTTensor
+    rtol >= 0 || throw(ArgumentError("rtol must be nonnegative"))
+    atol >= 0 || throw(ArgumentError("atol must be nonnegative"))
+    validate_lattice_frohlich_current_correlation_config(config)
+    state isa TTTensor || throw(ArgumentError("equilibrium state must be a TTTensor"))
+    root_density_matrix(state, problem.system)
+    _validate_lattice_frohlich_equilibrium_metadata(metadata)
+    for field in _LATTICE_FROHLICH_METADATA_FLOAT_FIELDS
+        name = _lattice_frohlich_metadata_name(field)
+        _lattice_frohlich_metadata_approximate(name, _lattice_frohlich_metadata_float(metadata, name), getfield(config, field); rtol, atol)
+    end
+    for field in _LATTICE_FROHLICH_METADATA_INTEGER_FIELDS
+        name = _lattice_frohlich_metadata_name(field)
+        _lattice_frohlich_metadata_exact(name, _lattice_frohlich_metadata_integer(metadata, name), getfield(config, field))
+    end
+    _lattice_frohlich_metadata_approximate("site_energies_cm", _lattice_frohlich_metadata_float_vector(metadata, "site_energies_cm"), config.site_energies_cm; rtol, atol)
+    _lattice_frohlich_metadata_exact("pade_type", _lattice_frohlich_metadata_string(metadata, "pade_type"), string(config.pade_type))
+    exponents = complex.(_lattice_frohlich_metadata_float_vector(metadata, "exponents_real"), _lattice_frohlich_metadata_float_vector(metadata, "exponents_imag"))
+    coefficients = complex.(_lattice_frohlich_metadata_float_vector(metadata, "coefficients_real"), _lattice_frohlich_metadata_float_vector(metadata, "coefficients_imag"))
+    _lattice_frohlich_metadata_approximate("exponents", exponents, decomposition.exponents; rtol, atol)
+    _lattice_frohlich_metadata_approximate("coefficients", coefficients, decomposition.coefficients; rtol, atol)
+    _lattice_frohlich_metadata_exact("tpsd_term_count", _lattice_frohlich_metadata_integer(metadata, "tpsd_term_count"), length(decomposition.exponents))
+    rows = _lattice_frohlich_metadata_value(metadata, "frohlich_weights")
+    weights = Matrix{Float64}(undef, length(rows), config.site_count)
+    for (row_index, row) in pairs(rows)
+        length(row) == config.site_count || throw(ArgumentError("frohlich_weights row length must equal site_count"))
+        weights[row_index, :] .= Float64.(row)
+    end
+    size(weights) == (config.site_count, config.site_count) || throw(ArgumentError("frohlich_weights shape must equal site_count squared"))
+    _lattice_frohlich_metadata_approximate("frohlich_weights", weights, problem.frohlich_weights; rtol, atol)
+    _lattice_frohlich_metadata_exact("hierarchy_sizes", _lattice_frohlich_metadata_integer_vector(metadata, "hierarchy_sizes"), problem.system.nb)
+    dimensions = _lattice_frohlich_metadata_integer_vector(metadata, "tt_dimensions")
+    _lattice_frohlich_metadata_exact("tt_dimensions", dimensions, heom_tt_dimensions(problem.system))
+    _lattice_frohlich_metadata_exact("tt_dimensions", tt_dims(state), dimensions)
+    return state
+end
+
+function write_lattice_frohlich_equilibration_csv(path::AbstractString, result;
+                                                   overwrite::Bool=false)::String
+    target = String(path)
+    !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
+    length(result.times) == size(result.populations, 2) == length(result.trace) == length(result.maximum_rank) == length(result.mean_rank) || throw(ArgumentError("equilibration result lengths are inconsistent"))
+    temporary_path = nothing
+    try
+        temporary_path, io = mktemp(dirname(abspath(target)))
+        try
+            println(io, join(["time_fs", ["population_site_$site" for site in axes(result.populations, 1)]..., "trace", "max_rank", "mean_rank"], ","))
+            for index in eachindex(result.times)
+                println(io, join(Any[result.times[index], result.populations[:, index]..., result.trace[index], result.maximum_rank[index], result.mean_rank[index]], ","))
+            end
+        finally close(io) end
+        !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
+        if overwrite
+            _lattice_frohlich_atomic_rename(temporary_path, target); temporary_path = nothing
+        else
+            Base.Filesystem.hardlink(temporary_path, target)
+        end
+        return target
+    finally
+        temporary_path === nothing || rm(temporary_path; force=true)
+    end
+end
+
+function write_lattice_frohlich_equilibration_png(path::AbstractString, result, plotter;
+                                                   overwrite::Bool=false)::String
+    target = String(path)
+    !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
+    temporary_path = nothing
+    try
+        temporary_path, io = mktemp(dirname(abspath(target))); close(io)
+        png_path = "$temporary_path.png"; mv(temporary_path, png_path); temporary_path = png_path
+        rm(temporary_path); plotter(temporary_path, result)
+        isfile(temporary_path) || throw(ArgumentError("plotter did not write a PNG file"))
+        !overwrite && ispath(target) && throw(ArgumentError("target already exists: $target"))
+        if overwrite
+            _lattice_frohlich_atomic_rename(temporary_path, target); temporary_path = nothing
+        else
+            Base.Filesystem.hardlink(temporary_path, target)
+        end
+        return target
+    finally
+        temporary_path === nothing || rm(temporary_path; force=true)
+    end
 end
