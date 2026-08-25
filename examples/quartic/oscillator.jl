@@ -25,26 +25,17 @@ function build_quartic_mode(config::QuarticConfig)
 
     q_raw = (a + a') / sqrt(2 * config.basis_frequency)
     p_raw = -1im * sqrt(config.basis_frequency / 2) * (a - a')
-    harmonic_reference = iszero(config.K4) &&
-                         isapprox(config.omega_p, config.K2; atol=1e-12, rtol=1e-12) &&
-                         isapprox(config.K2, config.basis_frequency; atol=1e-12, rtol=1e-12)
-
-    if harmonic_reference
-        energies = config.basis_frequency .* (collect(0:(config.d_keep - 1)) .+ 0.5)
-        U = ComplexF64.(Matrix(I, config.d_raw, config.d_keep))
-    else
-        h_raw = config.omega_p / 2 * (p_raw * p_raw) +
-                config.K2 / 2 * (q_raw * q_raw) +
-                config.K4 / 4 * (q_raw * q_raw * q_raw * q_raw)
-        eigenbasis = eigen(Hermitian(h_raw))
-        energies = Float64.(eigenbasis.values[1:config.d_keep])
-        U = ComplexF64.(eigenbasis.vectors[:, 1:config.d_keep])
-    end
+    h_raw = config.omega_p / 2 * (p_raw * p_raw) +
+            config.K2 / 2 * (q_raw * q_raw) +
+            config.K4 / 4 * (q_raw * q_raw * q_raw * q_raw)
+    eigenbasis = eigen(Hermitian(h_raw))
+    energies = Float64.(eigenbasis.values[1:config.d_keep])
+    U = ComplexF64.(eigenbasis.vectors[:, 1:config.d_keep])
 
     project(A) = ComplexF64.(U' * A * U)
     h_projected = Matrix(Diagonal(ComplexF64.(energies)))
     q_projected = project(q_raw)
-    q2_projected = q_projected * q_projected
+    q2_projected = project(q_raw * q_raw)
     p_projected = project(p_raw)
     return QuarticMode(energies, h_projected, q_projected, q2_projected, p_projected, U)
 end
