@@ -865,3 +865,17 @@ end
     end
     @test isdefined(@__MODULE__, :CairoMakie) == cairo_was_loaded
 end
+
+@testset "quartic comparison plot lazily renders with CairoMakie" begin
+    result = (
+        times=[0.0, 1.0],
+        populations=[1.0 0.5; 0.0 0.5],
+    )
+    cases = [(label="smoke", result=result)]
+    mktempdir() do directory
+        path = joinpath(directory, "comparison.png")
+        @test plot_two_site_comparison(path, cases) == path
+        @test isfile(path)
+        @test filesize(path) > 0
+    end
+end

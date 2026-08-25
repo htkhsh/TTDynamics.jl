@@ -2,7 +2,7 @@ function _load_quartic_cairomakie()
     if !isdefined(@__MODULE__, :CairoMakie)
         @eval import CairoMakie
     end
-    return getfield(@__MODULE__, :CairoMakie)
+    return Base.eval(@__MODULE__, :CairoMakie)
 end
 
 function _quartic_publish_png(
@@ -53,15 +53,18 @@ function _quartic_line_plot(
 )
     return _quartic_publish_png(path; overwrite) do temporary_path
         cm = _load_quartic_cairomakie()
-        figure = cm.Figure(size=(900, 600))
-        axis = cm.Axis(
-            figure[1, 1];
+        figure = Base.invokelatest(cm.Figure; size=(900, 600))
+        figure_cell = Base.invokelatest(getindex, figure, 1, 1)
+        axis = Base.invokelatest(
+            cm.Axis,
+            figure_cell;
             xlabel,
             ylabel,
             title,
         )
         for item in series
-            cm.lines!(
+            Base.invokelatest(
+                cm.lines!,
                 axis,
                 times,
                 item.values;
@@ -69,8 +72,8 @@ function _quartic_line_plot(
                 label=item.label,
             )
         end
-        cm.axislegend(axis; position=:rt)
-        cm.save(temporary_path, figure)
+        Base.invokelatest(cm.axislegend, axis; position=:rt)
+        Base.invokelatest(cm.save, temporary_path, figure)
     end
 end
 
@@ -162,9 +165,11 @@ function plot_two_site_comparison(
     isempty(cases) && throw(ArgumentError("at least one comparison case is required"))
     return _quartic_publish_png(path; overwrite) do temporary_path
         cm = _load_quartic_cairomakie()
-        figure = cm.Figure(size=(1000, 650))
-        axis = cm.Axis(
-            figure[1, 1];
+        figure = Base.invokelatest(cm.Figure; size=(1000, 650))
+        figure_cell = Base.invokelatest(getindex, figure, 1, 1)
+        axis = Base.invokelatest(
+            cm.Axis,
+            figure_cell;
             xlabel="Time",
             ylabel="Population",
             title="Two-site quartic HEOM-TT charge transfer",
@@ -174,7 +179,8 @@ function plot_two_site_comparison(
                 ArgumentError("population columns must match the time grid"),
             )
             for site in axes(case.result.populations, 1)
-                cm.lines!(
+                Base.invokelatest(
+                    cm.lines!,
                     axis,
                     case.result.times,
                     case.result.populations[site, :];
@@ -183,7 +189,7 @@ function plot_two_site_comparison(
                 )
             end
         end
-        cm.axislegend(axis; position=:rt)
-        cm.save(temporary_path, figure)
+        Base.invokelatest(cm.axislegend, axis; position=:rt)
+        Base.invokelatest(cm.save, temporary_path, figure)
     end
 end
