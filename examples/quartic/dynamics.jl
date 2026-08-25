@@ -27,6 +27,11 @@ function _quartic_finite_complex(value)
     return isfinite(real(value)) && isfinite(imag(value))
 end
 
+function _quartic_real_expectations(values, label::AbstractString)
+    all(_quartic_finite_complex, values) || throw(ArgumentError("$label must be finite"))
+    return real.(values)
+end
+
 """
     measure_quartic_state(state, model)
 
@@ -37,41 +42,35 @@ function measure_quartic_state(state::TTTensor, model::QuarticModel)
     root = root_ado(state, model.system)
     observables = model.observables
     trace_value = root_expectation(state, model.system, observables.trace)
-    populations = real.([
+    populations = _quartic_real_expectations([
         root_expectation(state, model.system, observable)
         for observable in observables.electron_populations
-    ])
+    ], "electron populations")
     electron_number = root_expectation(
         state,
         model.system,
         observables.electron_number,
     )
-    oscillator_q = real.([
+    oscillator_q = _quartic_real_expectations([
         root_expectation(state, model.system, observable)
         for observable in observables.oscillator_q
-    ])
-    oscillator_q2 = real.([
+    ], "oscillator q values")
+    oscillator_q2 = _quartic_real_expectations([
         root_expectation(state, model.system, observable)
         for observable in observables.oscillator_q2
-    ])
-    oscillator_energy = real.([
+    ], "oscillator q2 values")
+    oscillator_energy = _quartic_real_expectations([
         root_expectation(state, model.system, observable)
         for observable in observables.oscillator_hamiltonian
-    ])
+    ], "oscillator energy values")
     adjoint_root = _quartic_adjoint_root(root, model.system.physical_dimensions)
     hermiticity_error = Float64(real(tt_norm(root - adjoint_root)))
     ranks = collect(tt_ranks(state))
     mean_rank = sum(ranks) / length(ranks)
 
-    all(isfinite, populations) || throw(ArgumentError("electron populations must be finite"))
     _quartic_finite_complex(trace_value) || throw(ArgumentError("root trace must be finite"))
     _quartic_finite_complex(electron_number) || throw(ArgumentError(
         "electron number must be finite",
-    ))
-    all(isfinite, oscillator_q) || throw(ArgumentError("oscillator q values must be finite"))
-    all(isfinite, oscillator_q2) || throw(ArgumentError("oscillator q2 values must be finite"))
-    all(isfinite, oscillator_energy) || throw(ArgumentError(
-        "oscillator energy values must be finite",
     ))
     isfinite(hermiticity_error) || throw(ArgumentError("Hermiticity error must be finite"))
 

@@ -562,6 +562,13 @@ end
     end
 end
 
+@testset "quartic measurement rejects nonfinite complex observables" begin
+    @test_throws ArgumentError _quartic_real_expectations(
+        ComplexF64[complex(1.0, NaN), complex(1.0, Inf)],
+        "test observable",
+    )
+end
+
 @testset "quartic Crank--Nicolson propagation" begin
     closed_config = QuarticConfig(
         site_count=1,
