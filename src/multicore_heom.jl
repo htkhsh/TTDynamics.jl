@@ -26,7 +26,13 @@ struct ExponentialCorrelation
         scales::Vector{Float64},
         metadata::CorrelationFitMetadata,
     )
-        _validate_exponential_correlation(rates, coeff_forward, coeff_backward, scales)
+        _validate_exponential_correlation(
+            rates,
+            coeff_forward,
+            coeff_backward,
+            scales;
+            stability_tolerance=0.0,
+        )
         new(rates, coeff_forward, coeff_backward, scales, metadata)
     end
 end
@@ -146,13 +152,24 @@ end
 multicore_heom_dimensions(system::MultiCoreHEOMTTSystem) =
     [system.physical_dimensions; system.hierarchy_sizes]
 
-function _validate_exponential_correlation(rates, coeff_forward, coeff_backward, scales)
+function _validate_exponential_correlation(
+    rates,
+    coeff_forward,
+    coeff_backward,
+    scales;
+    stability_tolerance::Float64=0.0,
+)
     _validate_matching_nonempty_lengths(rates, coeff_forward, coeff_backward, scales)
     all(isfinite, rates) || throw(ArgumentError("rates must be finite"))
     all(isfinite, coeff_forward) || throw(ArgumentError("forward coefficients must be finite"))
     all(isfinite, coeff_backward) || throw(ArgumentError("backward coefficients must be finite"))
     all(isfinite, scales) || throw(ArgumentError("scales must be finite"))
     all(>(0), scales) || throw(ArgumentError("scales must be positive"))
+    for (index, rate) in pairs(rates)
+        real(rate) < -stability_tolerance && throw(ArgumentError(
+            "rate $index has negative real part $(real(rate)) beyond tolerance $stability_tolerance",
+        ))
+    end
     return nothing
 end
 
@@ -186,7 +203,6 @@ function _validate_multicore_heom_system(
         throw(ArgumentError("physical_dimensions must be nonempty"))
     all(>(0), physical_dimensions) ||
         throw(ArgumentError("physical_dimensions must be positive"))
-    isempty(couplings) && throw(ArgumentError("couplings must be nonempty"))
     all(>(0), hierarchy_sizes) ||
         throw(ArgumentError("hierarchy_sizes must be positive"))
 
@@ -196,7 +212,7 @@ function _validate_multicore_heom_system(
     input_dims == physical_dimensions ||
         throw(ArgumentError("physical Liouvillian input dimensions must match physical_dimensions"))
 
-    expanded_poles = sum(length(coupling.correlation.rates) for coupling in couplings)
+    expanded_poles = sum((length(coupling.correlation.rates) for coupling in couplings); init=0)
     length(hierarchy_sizes) == expanded_poles || throw(ArgumentError(
         "hierarchy_sizes must provide one positive local size per expanded bath pole",
     ))

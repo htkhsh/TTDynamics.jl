@@ -34,6 +34,13 @@ using .TTDynamics
         [-1im],
         metadata,
     )
+    @test_throws ArgumentError ExponentialCorrelation(
+        ComplexF64[-1 + 0im],
+        ComplexF64[1im],
+        ComplexF64[-1im],
+        [1.0],
+        metadata,
+    )
 end
 
 @testset "multi-core HEOM dimensions and validation" begin
@@ -72,4 +79,9 @@ end
         [3, 3],
     )
     @test_throws ArgumentError MultiCoreHEOMTTSystem(physical_L, [4, 9], couplings, [0])
+
+    closed_system = MultiCoreHEOMTTSystem(physical_L, [4, 9], LocalBathCoupling[], Int[])
+    @test multicore_heom_dimensions(closed_system) == [4, 9]
+    @test isempty(closed_system.couplings)
+    @test isempty(closed_system.hierarchy_sizes)
 end
