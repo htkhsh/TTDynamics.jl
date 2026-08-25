@@ -27,8 +27,9 @@ using .TTDynamics
     fit = ExponentialCorrelation([rate], [forward], [backward], metadata)
     scale = only(fit.scales)
     V = ComplexF64[0.4 0.7im; -0.2 1.1]
-    VL = liouville_left(V)
-    VR = liouville_right(V)
+    I2 = Matrix{ComplexF64}(I, 2, 2)
+    VL = kron(I2, V)
+    VR = kron(transpose(V), I2)
     physical_L = ComplexF64[
         -0.3+0.1im 0.2im 0.0 0.4
         0.1 -0.5-0.2im -0.3im 0.0
@@ -215,6 +216,30 @@ end
         [3, 3],
     )
     @test_throws ArgumentError MultiCoreHEOMTTSystem(physical_L, [4, 9], couplings, [0])
+
+    same_core_couplings = [
+        LocalBathCoupling(1, Matrix{ComplexF64}(I, 2, 2), fit),
+        LocalBathCoupling(1, 2 .* Matrix{ComplexF64}(I, 2, 2), fit),
+    ]
+    same_core_system = MultiCoreHEOMTTSystem(
+        physical_L,
+        [4, 9],
+        same_core_couplings,
+        fill(3, 4),
+    )
+    @test same_core_system.couplings[1].operator == Matrix{ComplexF64}(I, 2, 2)
+    @test same_core_system.couplings[2].operator == 2 .* Matrix{ComplexF64}(I, 2, 2)
+
+    reversed_couplings = [
+        LocalBathCoupling(2, Matrix{ComplexF64}(I, 3, 3), fit),
+        LocalBathCoupling(1, Matrix{ComplexF64}(I, 2, 2), fit),
+    ]
+    @test_throws ArgumentError MultiCoreHEOMTTSystem(
+        physical_L,
+        [4, 9],
+        reversed_couplings,
+        fill(3, 4),
+    )
 
     closed_system = MultiCoreHEOMTTSystem(physical_L, [4, 9], LocalBathCoupling[], Int[])
     @test multicore_heom_dimensions(closed_system) == [4, 9]

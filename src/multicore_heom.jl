@@ -413,6 +413,13 @@ function _validate_multicore_heom_system(
             ),
         )
     end
+    for index in 2:length(couplings)
+        couplings[index - 1].physical_core <= couplings[index].physical_core ||
+            throw(ArgumentError(
+                "couplings must be ordered by nondecreasing physical_core " *
+                "to define site-major hierarchy modes",
+            ))
+    end
 
     return nothing
 end
