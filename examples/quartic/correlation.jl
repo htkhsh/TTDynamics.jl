@@ -191,8 +191,9 @@ function _extract_esprit_candidates(
     else
         tolerance = _validate_fit_tolerance(fit_sval_rtol, "fit_sval_rtol")
         initial = ExpFit.esprit(samples, dt, tolerance; ncols=ncols)
-        length(initial.expon) <= rank_max ?
-            initial : ExpFit.esprit(samples, dt, rank_max; ncols=ncols)
+        automatic_rank_cap = min(rank_max, maximum_rank)
+        length(initial.expon) <= automatic_rank_cap ?
+            initial : ExpFit.esprit(samples, dt, automatic_rank_cap; ncols=ncols)
     end
     isempty(candidate.expon) && throw(ArgumentError("ESPRIT returned no pole candidates"))
     return ComplexF64.(candidate.expon)

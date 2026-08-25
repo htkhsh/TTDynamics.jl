@@ -78,12 +78,19 @@ function _quartic_line_plot(
 end
 
 """
-    plot_one_site_result(paths, result; overwrite=false)
+    plot_one_site_result(paths, result[, publication_callback]; overwrite=false)
 
 Lazily load CairoMakie and publish the one-site population, oscillator,
 trace, and TT-rank diagnostics without overwriting existing files by default.
+`publication_callback(path)` is invoked immediately after each atomic PNG
+publication so callers can roll back only outputs they own.
 """
-function plot_one_site_result(paths, result; overwrite::Bool=false)
+function plot_one_site_result(
+    paths,
+    result,
+    publication_callback=path -> nothing;
+    overwrite::Bool=false,
+)
     time_count = length(result.times)
     all(
         size(values, 2) == time_count for values in (
@@ -102,6 +109,7 @@ function plot_one_site_result(paths, result; overwrite::Bool=false)
         title="One-site electron population",
         overwrite,
     )
+    publication_callback(paths.populations)
     _quartic_line_plot(
         paths.oscillator_q,
         result.times,
@@ -110,6 +118,7 @@ function plot_one_site_result(paths, result; overwrite::Bool=false)
         title="One-site oscillator position",
         overwrite,
     )
+    publication_callback(paths.oscillator_q)
     _quartic_line_plot(
         paths.oscillator_q2,
         result.times,
@@ -118,6 +127,7 @@ function plot_one_site_result(paths, result; overwrite::Bool=false)
         title="One-site oscillator squared position",
         overwrite,
     )
+    publication_callback(paths.oscillator_q2)
     _quartic_line_plot(
         paths.oscillator_energy,
         result.times,
@@ -126,6 +136,7 @@ function plot_one_site_result(paths, result; overwrite::Bool=false)
         title="One-site bare oscillator energy",
         overwrite,
     )
+    publication_callback(paths.oscillator_energy)
     _quartic_line_plot(
         paths.trace,
         result.times,
@@ -137,6 +148,7 @@ function plot_one_site_result(paths, result; overwrite::Bool=false)
         title="Root-ADO trace",
         overwrite,
     )
+    publication_callback(paths.trace)
     _quartic_line_plot(
         paths.rank,
         result.times,
@@ -148,6 +160,7 @@ function plot_one_site_result(paths, result; overwrite::Bool=false)
         title="HEOM-TT rank diagnostics",
         overwrite,
     )
+    publication_callback(paths.rank)
     return paths
 end
 

@@ -140,7 +140,9 @@ end
 
 Run one local oscillator with one electronic state, save its CSV diagnostics,
 and optionally render plots. Builders and the propagator are injectable so a
-workflow smoke test need not perform quadrature or time evolution.
+workflow smoke test need not perform quadrature or time evolution. Plotters
+may accept a third positional publication callback for incremental cleanup;
+legacy two-argument plotters remain supported.
 """
 function one_site_main(
     config::QuarticConfig=DEFAULT_QUARTIC_ONE_SITE_CONFIG;
@@ -184,8 +186,20 @@ function one_site_main(
         csv_writer(paths.csv, result; overwrite)
         push!(published_paths, paths.csv)
         if plotter !== nothing
-            plotter(paths, result; overwrite)
-            append!(published_paths, plot_paths)
+            publication_callback = function(path)
+                published_path = String(path)
+                published_path in plot_paths || throw(ArgumentError(
+                    "plotter reported an unexpected published path: $published_path",
+                ))
+                push!(published_paths, published_path)
+                return nothing
+            end
+            if applicable(plotter, paths, result, publication_callback)
+                plotter(paths, result, publication_callback; overwrite)
+            else
+                plotter(paths, result; overwrite)
+                append!(published_paths, plot_paths)
+            end
         end
     catch
         if !overwrite

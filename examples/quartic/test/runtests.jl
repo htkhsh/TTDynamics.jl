@@ -398,6 +398,20 @@ end
         common_keywords...,
     )
     @test length(automatic_fit.rates) == 1
+
+    three_rate_samples = ComplexF64[
+        0.7 * exp(-0.2 * time) + 0.2 * exp(-0.5 * time) + 0.1 * exp(-0.9 * time)
+        for time in training_times
+    ]
+    capped_candidates = _extract_esprit_candidates(
+        three_rate_samples,
+        training_times[2] - training_times[1];
+        fit_rank=0,
+        fit_rank_max=3,
+        fit_sval_rtol=1e-12,
+        hankel_rows=3,
+    )
+    @test length(capped_candidates) == 2
 end
 
 @testset "single-pole ESPRIT fit reports no pair separation" begin
@@ -1014,6 +1028,35 @@ end
     end
 
     mktempdir() do directory
+        ambiguous_contents = "ambiguous plot target"
+        incremental_plotter = (
+            paths,
+            result,
+            publication_callback=path -> nothing;
+            overwrite=false,
+        ) -> begin
+            @test !overwrite
+            write(paths.populations, "owned plot")
+            publication_callback(paths.populations)
+            write(paths.oscillator_q, ambiguous_contents)
+            error("plotter failed after publishing one registered plot")
+        end
+        @test_throws ErrorException one_site_main(
+            one_site_config;
+            output_directory=directory,
+            correlation_builder=_ -> fit,
+            propagator,
+            plotter=incremental_plotter,
+            progress_io=IOBuffer(),
+        )
+        paths = quartic_output_paths(directory; stem="one_site")
+        @test !ispath(paths.csv)
+        @test !ispath(paths.populations)
+        @test isfile(paths.oscillator_q)
+        @test read(paths.oscillator_q, String) == ambiguous_contents
+    end
+
+    mktempdir() do directory
         call_count = Ref(0)
         competing_contents = "concurrent two-site target"
         partially_failing_writer = (path, result; overwrite=false) -> begin
@@ -1112,5 +1155,31 @@ end
         @test plot_two_site_comparison(path, cases) == path
         @test isfile(path)
         @test filesize(path) > 0
+    end
+end
+
+@testset "built-in one-site plotter reports each publication immediately" begin
+    result = (
+        times=[0.0, 1.0],
+        populations=[1.0 1.0],
+        oscillator_q=[0.0 0.1],
+        oscillator_q2=[0.5 0.6],
+        oscillator_energy=[0.5 0.5],
+        trace=ComplexF64[1, 1],
+        maximum_rank=[1, 2],
+        mean_rank=[1.0, 1.5],
+    )
+    mktempdir() do directory
+        paths = quartic_output_paths(directory; stem="callback")
+        publications = String[]
+        callback = path -> begin
+            push!(publications, path)
+            error("stop after first publication")
+        end
+        @test_throws ErrorException plot_one_site_result(paths, result, callback)
+        @test publications == [paths.populations]
+        @test isfile(paths.populations)
+        @test filesize(paths.populations) > 0
+        @test !ispath(paths.oscillator_q)
     end
 end
