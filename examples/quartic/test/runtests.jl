@@ -486,8 +486,10 @@ end
     generator_probe = quartic_test_product_vector(multicore_heom_dimensions(model.system))
     generator_action = model.generator * generator_probe
     expected_action = expected_generator * generator_probe
-    @test tt_norm(generator_action - expected_action) <=
-          10sqrt(eps(Float64)) * max(tt_norm(expected_action), 1)
+    dense_generator_action = vec(tt_full(generator_action))
+    dense_expected_action = vec(tt_full(expected_action))
+    @test norm(dense_generator_action - dense_expected_action) <=
+          1e-10 * max(norm(dense_expected_action), 1)
 
     no_bath_config = quartic_test_config_with(config; bath_lambda=0.0)
     no_bath = build_quartic_model(no_bath_config, mode, fit)
@@ -497,7 +499,9 @@ end
     closed_probe = quartic_test_product_vector(multicore_heom_dimensions(no_bath.system))
     closed_action = no_bath.generator * closed_probe
     physical_action = no_bath.system.physical_liouvillian * closed_probe
-    @test tt_norm(closed_action - physical_action) <=
-          10sqrt(eps(Float64)) * max(tt_norm(physical_action), 1)
+    dense_closed_action = vec(tt_full(closed_action))
+    dense_physical_action = vec(tt_full(physical_action))
+    @test norm(dense_closed_action - dense_physical_action) <=
+          1e-10 * max(norm(dense_physical_action), 1)
     @test build_quartic_model(no_bath_config, mode, nothing).fit === nothing
 end
