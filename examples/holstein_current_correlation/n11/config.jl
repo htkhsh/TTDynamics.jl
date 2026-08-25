@@ -34,7 +34,7 @@ struct HolsteinCurrentCorrelationConfig
     progress_interval::Int
 end
 
-function HolsteinCurrentCorrelationConfig(; site_count=7, site_energies_cm=zeros(site_count),
+function HolsteinCurrentCorrelationConfig(; site_count=11, site_energies_cm=zeros(site_count),
     hopping_cm=400.0, brownian_frequency_cm=1400.0,
     brownian_damping_cm=200.0, reorganization_energy_cm=600.0,
     temperature_K=300.0, initial_site=1, final_time_fs=500.0,
@@ -42,8 +42,8 @@ function HolsteinCurrentCorrelationConfig(; site_count=7, site_energies_cm=zeros
     pade_type=:Nm1, validation_final_time_fs=100.0,
     validation_sample_count=200, bcf_upper_bound_cm=10_000.0,
     hierarchy_local_size=4, temporal_basis_size=3, tamen_tolerance=2e-2,
-    operator_tolerance=1e-10, state_rounding_tolerance=1e-10,
-    sweep_count=3, local_iterations=5, kick_rank=4,
+    operator_tolerance=1e-8, state_rounding_tolerance=1e-8,
+    sweep_count=2, local_iterations=3, kick_rank=4,
     progress_interval=10)
     config = HolsteinCurrentCorrelationConfig(
         Int(site_count), Float64.(site_energies_cm), Float64(hopping_cm),
