@@ -79,6 +79,16 @@ function quartic_test_zero_result(model, config)
     )
 end
 
+@testset "quartic README distinguishes short-time and plumbing commands" begin
+    readme = read(joinpath(@__DIR__, "..", "README.md"), String)
+    required_command = """julia --project=examples/quartic -e 'include(\"examples/quartic/two_site_transfer.jl\"); two_site_main(QuarticConfig(final_time=0.1, time_step=0.1, d_raw=6, d_keep=2))'"""
+
+    @test occursin(required_command, readme)
+    @test occursin("potentially expensive short-time two-site invocation", readme)
+    @test occursin("actual plumbing smoke", readme)
+    @test !occursin("For a short two-site smoke run", readme)
+end
+
 @testset "quartic convergence dispatcher rebuilds every requested case" begin
     base_config = QuarticConfig(
         site_count=2,

@@ -43,15 +43,20 @@ julia --project=examples/quartic examples/quartic/one_site_relaxation.jl
 julia --project=examples/quartic examples/quartic/two_site_transfer.jl
 ```
 
-For a short two-site smoke run:
+For a potentially expensive short-time two-site invocation:
 
 ```bash
 julia --project=examples/quartic -e 'include("examples/quartic/two_site_transfer.jl"); two_site_main(QuarticConfig(final_time=0.1, time_step=0.1, d_raw=6, d_keep=2))'
 ```
 
+This shortens the physical time only. It retains automatic fit-rank selection
+and `hierarchy_nmax=4`; conjugate closure can produce many poles and therefore
+many hierarchy TT cores, so it is not a guaranteed quick smoke test.
+
 Default outputs are below `examples/quartic/output/`. Existing files are
-never replaced unless `overwrite=true` is explicitly passed. For an isolated
-quick check without plotting, use a new temporary directory:
+never replaced unless `overwrite=true` is explicitly passed.
+For the actual plumbing smoke without plotting, use `hierarchy_nmax=0` and a
+new temporary directory:
 
 ```bash
 QUARTIC_OUT="$(mktemp -d)"
