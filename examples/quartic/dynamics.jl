@@ -32,6 +32,31 @@ function _quartic_real_expectations(values, label::AbstractString)
     return real.(values)
 end
 
+function _quartic_stable_tt_norm(tensor::TTTensor)
+    cores = [ComplexF64.(copy(core)) for core in tensor.cores]
+    for index in 1:(length(cores) - 1)
+        left_rank, dimension, right_rank = size(cores[index])
+        factorization = qr(reshape(cores[index], left_rank * dimension, right_rank))
+        transfer = Matrix(factorization.R)
+        next_left_rank, next_dimension, next_right_rank = size(cores[index + 1])
+        next_left_rank == right_rank || throw(ArgumentError(
+            "adjacent TT ranks must agree",
+        ))
+        next_core = transfer * reshape(
+            cores[index + 1],
+            next_left_rank,
+            next_dimension * next_right_rank,
+        )
+        cores[index + 1] = reshape(
+            next_core,
+            size(transfer, 1),
+            next_dimension,
+            next_right_rank,
+        )
+    end
+    return Float64(norm(last(cores)))
+end
+
 """
     measure_quartic_state(state, model)
 
@@ -64,7 +89,7 @@ function measure_quartic_state(state::TTTensor, model::QuarticModel)
         for observable in observables.oscillator_hamiltonian
     ], "oscillator energy values")
     adjoint_root = _quartic_adjoint_root(root, model.system.physical_dimensions)
-    hermiticity_error = Float64(real(tt_norm(root - adjoint_root)))
+    hermiticity_error = _quartic_stable_tt_norm(root - adjoint_root)
     ranks = collect(tt_ranks(state))
     mean_rank = sum(ranks) / length(ranks)
 
@@ -343,5 +368,92 @@ function write_quartic_csv(
         return target
     finally
         temporary_path === nothing || rm(temporary_path; force=true)
+    end
+end
+
+const QUARTIC_CONVERGENCE_PARAMETERS = (
+    :d_raw,
+    :d_keep,
+    :basis_frequency,
+    :hierarchy_nmax,
+    :fit_rank,
+    :tt_cutoff,
+    :time_step,
+)
+
+function _quartic_convergence_config(
+    base_config::QuarticConfig,
+    parameter::Symbol,
+    value,
+)
+    names = fieldnames(QuarticConfig)
+    fields = NamedTuple{names}(
+        Tuple(deepcopy(getfield(base_config, name)) for name in names),
+    )
+    updates = parameter === :tt_cutoff ? (
+        operator_tolerance=value,
+        state_rounding_tolerance=value,
+    ) : NamedTuple{(parameter,)}((value,))
+    return QuarticConfig(; merge(fields, updates)...)
+end
+
+function _quartic_convergence_fit_error(run, result)
+    hasproperty(result, :fit_error) && return getproperty(result, :fit_error)
+    hasproperty(run, :fit_error) && return getproperty(run, :fit_error)
+    if hasproperty(run, :fit)
+        fit = getproperty(run, :fit)
+        fit === nothing && return missing
+        return fit.metadata.validation_relative_error
+    end
+    return missing
+end
+
+"""
+    run_quartic_convergence(base_config; parameter, values, runner)
+
+Run an explicit numerical convergence sweep. `parameter` must be one of
+`QUARTIC_CONVERGENCE_PARAMETERS`. The callback is invoked as `runner(config)`
+with a freshly rebuilt immutable configuration for every value and must return
+either a dynamics result or a workflow containing that result in `.result`.
+
+The virtual `:tt_cutoff` parameter sets both `operator_tolerance` and
+`state_rounding_tolerance`. Each returned diagnostic records the last
+population and trace, the validation fit error when available, and the largest
+TT rank observed during the run.
+"""
+function run_quartic_convergence(
+    base_config::QuarticConfig;
+    parameter::Symbol,
+    values,
+    runner,
+)
+    parameter in QUARTIC_CONVERGENCE_PARAMETERS || throw(ArgumentError(
+        "unsupported quartic convergence parameter: $(repr(parameter))",
+    ))
+
+    return map(values) do value
+        config = _quartic_convergence_config(base_config, parameter, value)
+        run = runner(config)
+        result = hasproperty(run, :result) ? getproperty(run, :result) : run
+        populations = getproperty(result, :populations)
+        traces = getproperty(result, :trace)
+        maximum_ranks = getproperty(result, :maximum_rank)
+        isempty(traces) && throw(ArgumentError("convergence result trace must be nonempty"))
+        isempty(maximum_ranks) && throw(ArgumentError(
+            "convergence result maximum_rank must be nonempty",
+        ))
+        size(populations, 2) > 0 || throw(ArgumentError(
+            "convergence result populations must have at least one time point",
+        ))
+        return (;
+            label="$(parameter)=$(repr(value))",
+            parameter,
+            value,
+            config,
+            final_populations=copy(populations[:, end]),
+            trace=traces[end],
+            fit_error=_quartic_convergence_fit_error(run, result),
+            maximum_rank=maximum(maximum_ranks),
+        )
     end
 end

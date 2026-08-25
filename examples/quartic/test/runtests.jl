@@ -79,6 +79,88 @@ function quartic_test_zero_result(model, config)
     )
 end
 
+@testset "quartic convergence dispatcher rebuilds every requested case" begin
+    base_config = QuarticConfig(
+        site_count=2,
+        site_energies=[0.1, -0.1],
+        d_raw=8,
+        d_keep=2,
+        basis_frequency=0.75,
+        hierarchy_nmax=1,
+        fit_rank=2,
+        fit_rank_max=6,
+        final_time=0.2,
+        time_step=0.1,
+        operator_tolerance=1e-8,
+        state_rounding_tolerance=1e-8,
+    )
+    original_fields = NamedTuple{fieldnames(QuarticConfig)}(
+        Tuple(deepcopy(getfield(base_config, name)) for name in fieldnames(QuarticConfig)),
+    )
+    sweeps = (
+        d_raw=[8, 10],
+        d_keep=[2, 3],
+        basis_frequency=[0.6, 0.9],
+        hierarchy_nmax=[0, 2],
+        fit_rank=[1, 3],
+        tt_cutoff=[1e-7, 1e-9],
+        time_step=[0.2, 0.1],
+    )
+
+    for parameter in keys(sweeps)
+        values = getfield(sweeps, parameter)
+        calls = QuarticConfig[]
+        runner = config -> begin
+            push!(calls, config)
+            run_index = length(calls)
+            return (;
+                populations=[1.0 1.0 - 0.1run_index; 0.0 0.1run_index],
+                trace=ComplexF64[1.0, 1.0 - run_index * 1e-10],
+                fit_error=run_index * 1e-4,
+                maximum_rank=[1, run_index + 2],
+            )
+        end
+
+        diagnostics = run_quartic_convergence(
+            base_config;
+            parameter,
+            values,
+            runner,
+        )
+
+        @test length(diagnostics) == 2
+        @test getfield.(diagnostics, :label) ==
+              ["$(parameter)=$(repr(value))" for value in values]
+        @test getfield.(diagnostics, :parameter) == fill(parameter, 2)
+        @test getfield.(diagnostics, :value) == collect(values)
+        @test diagnostics[1].final_populations == [0.9, 0.1]
+        @test diagnostics[2].final_populations == [0.8, 0.2]
+        @test diagnostics[2].trace == 1.0 - 2e-10
+        @test diagnostics[2].fit_error == 2e-4
+        @test diagnostics[2].maximum_rank == 4
+        @test length(calls) == 2
+        @test all(config -> config !== base_config, calls)
+        @test calls[1] !== calls[2]
+
+        if parameter === :tt_cutoff
+            @test getfield.(calls, :operator_tolerance) == values
+            @test getfield.(calls, :state_rounding_tolerance) == values
+        else
+            @test getfield.(calls, parameter) == values
+        end
+    end
+
+    @test NamedTuple{fieldnames(QuarticConfig)}(
+        Tuple(getfield(base_config, name) for name in fieldnames(QuarticConfig)),
+    ) == original_fields
+    @test_throws ArgumentError run_quartic_convergence(
+        base_config;
+        parameter=:temperature,
+        values=[0.5],
+        runner=identity,
+    )
+end
+
 @testset "quartic bath correlation sampling" begin
     cfg = QuarticConfig(
         temperature=0.5,
@@ -549,6 +631,15 @@ end
     @test all(isfinite, measurement.oscillator_q)
     @test all(isfinite, measurement.oscillator_q2)
     @test all(isfinite, measurement.oscillator_energy)
+
+    harmonic_config = quartic_test_config_with(config; K4=0.0)
+    harmonic_mode = build_quartic_mode(harmonic_config)
+    harmonic_model = build_quartic_model(harmonic_config, harmonic_mode, nothing)
+    harmonic_measurement = measure_quartic_state(
+        harmonic_model.initial_state,
+        harmonic_model,
+    )
+    @test harmonic_measurement.hermiticity_error < 1e-14
 
     mktempdir() do directory
         result = propagate_quartic_heom(model, config; final_time=0.0)
