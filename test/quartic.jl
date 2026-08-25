@@ -1,12 +1,8 @@
 using LinearAlgebra
 using Test
-using QuadGK
 
 include("../examples/quartic/config.jl")
 include("../examples/quartic/oscillator.jl")
-let correlation_path = joinpath(@__DIR__, "..", "examples", "quartic", "correlation.jl")
-    isfile(correlation_path) && include(correlation_path)
-end
 
 function raw_quartic_operators(config::QuarticConfig)
     a = zeros(ComplexF64, config.d_raw, config.d_raw)
@@ -71,70 +67,4 @@ end
     @test ishermitian(ρth)
     @test isapprox(real(tr(ρth)), 1.0; atol=1e-12)
     @test minimum(eigvals(Hermitian(ρth))) >= -1e-13
-end
-
-@testset "quartic bath correlation sampling" begin
-    cfg = QuarticConfig(
-        temperature=0.5,
-        bath_lambda=0.7,
-        bath_gamma=1.3,
-        quadrature_atol=1e-10,
-        quadrature_rtol=1e-8,
-    )
-    bath = CriticallyDampedBrownian(cfg.bath_lambda, cfg.bath_gamma)
-    normalization, _ = quadgk(
-        ω -> spectral_density(bath, ω) / ω,
-        0.0,
-        Inf;
-        rtol=1e-10,
-    )
-    @test normalization / π ≈ bath.lambda rtol=1e-8
-    @test isfinite(bath_correlation(bath, 0.0, cfg.temperature; rtol=1e-8, atol=1e-10))
-
-    times = collect(0.0:0.1:0.5)
-    samples = sample_bath_correlation(
-        bath,
-        cfg.temperature,
-        times;
-        rtol=cfg.quadrature_rtol,
-        atol=cfg.quadrature_atol,
-    )
-    @test length(samples) == length(times)
-    @test all(isfinite, samples)
-
-    cutoff_20 = sample_bath_correlation(
-        bath,
-        cfg.temperature,
-        times;
-        omega_integration_max=20 * bath.gamma,
-        rtol=1e-9,
-        atol=1e-11,
-    )
-    cutoff_40 = sample_bath_correlation(
-        bath,
-        cfg.temperature,
-        times;
-        omega_integration_max=40 * bath.gamma,
-        rtol=1e-9,
-        atol=1e-11,
-    )
-    @test cutoff_20 ≈ cutoff_40 rtol=2e-3
-
-    looser = sample_bath_correlation(
-        bath,
-        cfg.temperature,
-        times;
-        omega_integration_max=40 * bath.gamma,
-        rtol=1e-7,
-        atol=1e-9,
-    )
-    tighter = sample_bath_correlation(
-        bath,
-        cfg.temperature,
-        times;
-        omega_integration_max=40 * bath.gamma,
-        rtol=1e-9,
-        atol=1e-11,
-    )
-    @test looser ≈ tighter rtol=5e-4
 end

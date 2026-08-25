@@ -22,6 +22,18 @@ spectral_density(bath::CriticallyDampedBrownian, ω) =
 
 xcothx(x) = abs(x) < 1e-4 ? 1 + x^2 / 3 - x^4 / 45 : x * coth(x)
 
+function validate_quadrature_controls(rtol, atol, maxevals)
+    rtol_value = Float64(rtol)
+    atol_value = Float64(atol)
+    isfinite(rtol_value) && rtol_value > 0 ||
+        throw(ArgumentError("rtol must be finite and positive"))
+    isfinite(atol_value) && atol_value > 0 ||
+        throw(ArgumentError("atol must be finite and positive"))
+    maxevals isa Integer || throw(ArgumentError("maxevals must be a positive integer"))
+    maxevals > 0 || throw(ArgumentError("maxevals must be a positive integer"))
+    return rtol_value, atol_value, Int(maxevals)
+end
+
 function spectral_density_over_omega(bath::CriticallyDampedBrownian, ω)
     if iszero(ω)
         return 4 * bath.lambda / bath.gamma
@@ -43,9 +55,7 @@ function bath_correlation(
     isfinite(τ) || throw(ArgumentError("time must be finite"))
     isfinite(βinv) || throw(ArgumentError("temperature must be finite"))
     βinv > 0 || throw(ArgumentError("temperature must be positive"))
-    rtol > 0 || throw(ArgumentError("rtol must be positive"))
-    atol > 0 || throw(ArgumentError("atol must be positive"))
-    maxevals > 0 || throw(ArgumentError("maxevals must be positive"))
+    rtol_value, atol_value, maxevals_value = validate_quadrature_controls(rtol, atol, maxevals)
 
     upper = if omega_integration_max === nothing
         Inf
@@ -64,8 +74,22 @@ function bath_correlation(
     end
     dissipative_integrand(ω) = -spectral_density(bath, ω) * sin(ω * τ) / π
 
-    real_part, _ = quadgk(thermal_integrand, 0.0, upper; rtol=rtol, atol=atol, maxevals=maxevals)
-    imag_part, _ = quadgk(dissipative_integrand, 0.0, upper; rtol=rtol, atol=atol, maxevals=maxevals)
+    real_part, _ = quadgk(
+        thermal_integrand,
+        0.0,
+        upper;
+        rtol=rtol_value,
+        atol=atol_value,
+        maxevals=maxevals_value,
+    )
+    imag_part, _ = quadgk(
+        dissipative_integrand,
+        0.0,
+        upper;
+        rtol=rtol_value,
+        atol=atol_value,
+        maxevals=maxevals_value,
+    )
     return ComplexF64(real_part, imag_part)
 end
 
