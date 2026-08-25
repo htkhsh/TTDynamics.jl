@@ -172,14 +172,20 @@ function guarded_example_import(
     command = addenv(command, "JULIA_LOAD_PATH" => load_path, "GKSwstype" => "100")
 
     mktempdir() do directory
-        output = IOBuffer()
+        stdout_buffer = IOBuffer()
+        stderr_buffer = IOBuffer()
         process = run(
-            pipeline(Cmd(command; dir=directory); stdout=output, stderr=output);
+            pipeline(
+                Cmd(command; dir=directory);
+                stdout=stdout_buffer,
+                stderr=stderr_buffer,
+            );
             wait=false,
         )
         wait(process)
-        output_text = String(take!(output))
-        success(process) || println(stderr, output_text)
+        output_text = String(take!(stdout_buffer))
+        error_text = String(take!(stderr_buffer))
+        success(process) || println(stderr, error_text)
         @test success(process)
         @test occursin(marker, output_text)
         require_quiet_output && @test output_text == marker
@@ -407,7 +413,7 @@ end
         holstein_project = joinpath(repository_root, "examples", "holstein")
         holstein_example = joinpath(holstein_project, "holstein_brownian_heomtt.jl")
         holstein_load_path = join(
-            [repository_root, development_root, "@v#.#", "@stdlib"],
+            [repository_root, "@", development_root, "@v#.#", "@stdlib"],
             environment_separator,
         )
         guarded_example_import(
