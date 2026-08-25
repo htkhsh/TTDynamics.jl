@@ -8,6 +8,7 @@ include("../config.jl")
 include("../oscillator.jl")
 include("../correlation.jl")
 include("../model.jl")
+include("../dynamics.jl")
 
 function quartic_test_config_with(config::QuarticConfig; kwargs...)
     names = fieldnames(QuarticConfig)
@@ -504,4 +505,122 @@ end
     @test norm(dense_closed_action - dense_physical_action) <=
           1e-10 * max(norm(dense_physical_action), 1)
     @test build_quartic_model(no_bath_config, mode, nothing).fit === nothing
+end
+
+@testset "quartic root measurement and output safety" begin
+    config = QuarticConfig(
+        site_count=2,
+        d_raw=6,
+        d_keep=2,
+        bath_lambda=0.0,
+        final_time=0.1,
+        time_step=0.1,
+        operator_tolerance=1e-12,
+        state_rounding_tolerance=1e-12,
+    )
+    mode = build_quartic_mode(config)
+    model = build_quartic_model(config, mode, nothing; initial_site=1)
+
+    measurement = measure_quartic_state(model.initial_state, model)
+    @test measurement.trace ≈ 1 atol=1e-11
+    @test measurement.electron_number ≈ 1 atol=1e-11
+    @test measurement.hermiticity_error < 1e-11
+    @test measurement.populations ≈ [1.0, 0.0] atol=1e-11
+    @test all(isfinite, measurement.oscillator_q)
+    @test all(isfinite, measurement.oscillator_q2)
+    @test all(isfinite, measurement.oscillator_energy)
+
+    mktempdir() do directory
+        result = propagate_quartic_heom(model, config; final_time=0.0)
+        path = joinpath(directory, "quartic.csv")
+        @test write_quartic_csv(path, result) == path
+        header = split(readline(path), ',')
+        @test header[1:3] == ["time", "population_site_1", "population_site_2"]
+        @test all(
+            in(header),
+            [
+                "trace_real",
+                "trace_imag",
+                "hermiticity_error",
+                "electron_number_real",
+                "electron_number_imag",
+                "oscillator_q_site_1",
+                "oscillator_q2_site_1",
+                "oscillator_energy_site_1",
+                "maximum_rank",
+                "mean_rank",
+                "tamen_residual",
+                "tamen_truncation",
+            ],
+        )
+        @test_throws ArgumentError write_quartic_csv(path, result)
+        @test write_quartic_csv(path, result; overwrite=true) == path
+
+        paths = quartic_output_paths(directory; stem="smoke")
+        @test paths.csv == joinpath(directory, "smoke.csv")
+        @test paths.oscillator_q2 == joinpath(directory, "smoke_q2.png")
+    end
+end
+
+@testset "quartic Crank--Nicolson propagation" begin
+    closed_config = QuarticConfig(
+        site_count=1,
+        site_energies=[0.15],
+        hopping=0.0,
+        g=0.3,
+        d_raw=6,
+        d_keep=2,
+        bath_lambda=0.0,
+        final_time=0.01,
+        time_step=0.01,
+        temporal_basis_size=3,
+        tamen_tolerance=1e-5,
+        operator_tolerance=1e-12,
+        state_rounding_tolerance=1e-12,
+        sweep_count=4,
+        local_iterations=8,
+        kick_rank=2,
+    )
+    closed_mode = build_quartic_mode(closed_config)
+    closed_model = build_quartic_model(closed_config, closed_mode, nothing)
+    closed_result = propagate_quartic_heom(closed_model, closed_config)
+
+    initial_density = kron(
+        ComplexF64[1;;],
+        quartic_thermal_density(closed_mode, closed_config.temperature),
+    )
+    dense_hamiltonian = tt_full(closed_model.system_hamiltonian)
+    propagator = exp(-1im * dense_hamiltonian * closed_config.time_step)
+    expected_density = propagator * initial_density * propagator'
+    propagated_root = root_ado(closed_result.final_state, closed_model.system)
+    propagated_density = reshape(vec(tt_full(propagated_root)), 2, 2)
+
+    @test propagated_density ≈ expected_density atol=2e-5
+    @test closed_result.trace[end] ≈ 1 atol=2e-6
+    @test closed_result.electron_number[end] ≈ 1 atol=2e-6
+    @test closed_result.hermiticity_error[end] < 2e-6
+
+    bath_config = quartic_test_config_with(
+        closed_config;
+        bath_lambda=0.1,
+        final_time=0.02,
+        hierarchy_nmax=1,
+        tamen_tolerance=2e-3,
+        trace_tolerance=2e-3,
+        hermiticity_tolerance=2e-3,
+        electron_number_tolerance=2e-3,
+        tt_max_rank=1,
+    )
+    bath_model = build_quartic_model(bath_config, closed_mode, quartic_test_fit())
+    bath_result = @test_logs (:warn, r"TT rank") propagate_quartic_heom(
+        bath_model,
+        bath_config,
+    )
+    @test length(bath_result.times) == 3
+    @test all(isfinite, bath_result.populations)
+    @test all(value -> isfinite(real(value)) && isfinite(imag(value)), bath_result.trace)
+    @test maximum(abs.(bath_result.trace .- 1)) < bath_config.trace_tolerance
+    @test maximum(bath_result.hermiticity_error) < bath_config.hermiticity_tolerance
+    @test maximum(abs.(bath_result.electron_number .- 1)) <
+          bath_config.electron_number_tolerance
 end
