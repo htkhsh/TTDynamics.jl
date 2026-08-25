@@ -154,9 +154,22 @@ end
         @__DIR__, "..", "examples", "lattice_frohlich",
         "lattice_frohlich_brownian_heomtt.jl",
     ))
-    default_paths = lattice_frohlich_output_paths(dirname(example))
-    absent_before = map(path -> !ispath(path), default_paths)
-    @test all(absent_before)
+    example_directory = dirname(example)
+    snapshot_example_directory = function (directory)
+        entries = Dict{String,Any}()
+        for (root, directories, files) in walkdir(directory)
+            for name in directories
+                path = joinpath(root, name)
+                entries[relpath(path, directory)] = :directory
+            end
+            for name in files
+                path = joinpath(root, name)
+                entries[relpath(path, directory)] = read(path)
+            end
+        end
+        return entries
+    end
+    snapshot_before = snapshot_example_directory(example_directory)
     expression = "include($(repr(example))); print(\"lattice-frohlich-import-ok\")"
     command = `$(Base.julia_cmd()) --startup-file=no --compiled-modules=no --project=$(dirname(example)) -e $expression`
     dev_root = dirname(dirname(readchomp(`git rev-parse --path-format=absolute --git-common-dir`)))
@@ -186,8 +199,6 @@ end
         @test success(process)
         @test text == "lattice-frohlich-import-ok"
         @test isempty(readdir(directory))
-        absent_after = map(path -> !ispath(path), default_paths)
-        @test absent_after == absent_before
-        @test all(absent_after)
     end
+    @test snapshot_example_directory(example_directory) == snapshot_before
 end
