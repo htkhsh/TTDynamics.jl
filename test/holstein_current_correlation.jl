@@ -969,7 +969,21 @@ end
 @testset "Holstein current-correlation executable guard" begin
     example_directory = joinpath(@__DIR__, "..", "examples", "holstein_current_correlation")
     correlation_script = repr(joinpath(example_directory, "current_correlation.jl"))
-    output_directory = joinpath(example_directory, "output")
+    snapshot_example_directory = function (directory)
+        entries = Dict{String,Any}()
+        for (root, directories, files) in walkdir(directory)
+            for name in directories
+                path = joinpath(root, name)
+                entries[relpath(path, directory)] = :directory
+            end
+            for name in files
+                path = joinpath(root, name)
+                entries[relpath(path, directory)] = read(path)
+            end
+        end
+        return entries
+    end
+    snapshot_before = snapshot_example_directory(example_directory)
     repository_root = normpath(joinpath(@__DIR__, ".."))
     git_common_directory = readchomp(
         `git -C $repository_root rev-parse --path-format=absolute --git-common-dir`,
@@ -994,7 +1008,6 @@ end
     command = `$(Base.julia_cmd()) --startup-file=no --compiled-modules=no --project=$example_directory -e $expression`
     command = addenv(command, "JULIA_LOAD_PATH" => example_load_path, "GKSwstype" => "100")
 
-    @test !ispath(output_directory)
     mktempdir() do directory
         output = IOBuffer()
         error_output = IOBuffer()
@@ -1010,5 +1023,5 @@ end
         @test text == marker
         @test isempty(readdir(directory))
     end
-    @test !ispath(output_directory)
+    @test snapshot_example_directory(example_directory) == snapshot_before
 end
