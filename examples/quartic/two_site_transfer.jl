@@ -160,19 +160,25 @@ function two_site_main(
     end
 
     mkpath(String(output_directory))
+    published_paths = String[]
     try
         for case in cases
             csv_writer(case.paths.csv, case.result; overwrite)
+            push!(published_paths, case.paths.csv)
         end
         metadata_writer(
             paths.metadata,
             _quartic_metadata_text(cases, fit);
             overwrite,
         )
-        plotter === nothing || plotter(paths.comparison, cases; overwrite)
+        push!(published_paths, paths.metadata)
+        if plotter !== nothing
+            plotter(paths.comparison, cases; overwrite)
+            push!(published_paths, paths.comparison)
+        end
     catch
         if !overwrite
-            for path in expected_paths
+            for path in published_paths
                 rm(path; force=true)
             end
         end

@@ -168,6 +168,24 @@ function _extract_esprit_candidates(
         Int(hankel_rows)
     end
 
+    sample_count = length(samples)
+    sample_count >= 2 || throw(ArgumentError(
+        "at least two samples are required for ESPRIT",
+    ))
+    maximum_columns = iseven(sample_count) ?
+        sample_count ÷ 2 + 1 : (sample_count + 1) ÷ 2
+    column_count = isnothing(ncols) ? maximum_columns : ncols
+    2 <= column_count <= maximum_columns || throw(ArgumentError(
+        "hankel_rows (ExpFit ncols) must be between 2 and $maximum_columns " *
+        "for $sample_count samples",
+    ))
+    row_count = sample_count + 1 - column_count
+    maximum_rank = min(row_count, column_count - 1)
+    rank == 0 || rank <= maximum_rank || throw(ArgumentError(
+        "fit_rank must not exceed $maximum_rank for a $row_count-by-$column_count " *
+        "Hankel matrix",
+    ))
+
     candidate = if rank > 0
         ExpFit.esprit(samples, dt, rank; ncols=ncols)
     else
@@ -282,7 +300,7 @@ function _enforce_correlation_error(
 end
 
 function _minimum_pole_separation(rates)
-    length(rates) < 2 && return 0.0
+    length(rates) < 2 && return Inf
     return minimum(
         abs(rates[first] - rates[second])
         for first in 1:(length(rates) - 1) for second in (first + 1):length(rates)
@@ -528,7 +546,9 @@ function fit_correlation_esprit(
 
     minimum_separation = Float64(_minimum_pole_separation(rates))
     maximum_coefficient = Float64(maximum(abs, [coeff_forward; coeff_backward]))
-    all(isfinite, (minimum_separation, maximum_coefficient)) ||
+    valid_minimum_separation = isfinite(minimum_separation) ||
+        (length(rates) == 1 && minimum_separation == Inf)
+    valid_minimum_separation && isfinite(maximum_coefficient) ||
         throw(ArgumentError("common pole basis has nonfinite diagnostics"))
     metadata = CorrelationFitMetadata(
         training_errors.absolute_error,

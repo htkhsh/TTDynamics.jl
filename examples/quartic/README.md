@@ -178,7 +178,9 @@ fits forward and backward coefficients independently on one conjugate-closed
 pole basis. A critical double pole is approximated by nearby simple poles over
 the finite fit window. Nearby poles can make the Vandermonde problem poorly
 conditioned; they are diagnosed by minimum pole separation and condition
-number and are not merged or converted to a Jordan block. Increase the fit
+number and are not merged or converted to a Jordan block. A reported minimum
+pole separation of `Inf` means that the fit contains one pole, so no pole pair
+exists; it does not indicate a failed diagnostic. Increase the fit
 window/resolution and compare ranks rather than interpreting a single fit as
 unique.
 

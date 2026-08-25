@@ -356,6 +356,69 @@ end
     )
 end
 
+@testset "complex ESPRIT rejects invalid Hankel geometry as an argument error" begin
+    training_times = collect(0.0:0.1:0.8)
+    training_samples = ComplexF64[exp(-0.4 * time) for time in training_times]
+    validation_times = collect(0.05:0.1:0.75)
+    validation_samples = ComplexF64[exp(-0.4 * time) for time in validation_times]
+    common_keywords = (
+        validation_samples=validation_samples,
+        validation_times=validation_times,
+        fit_absolute_tolerance=1e-10,
+        fit_relative_tolerance=1e-10,
+    )
+
+    @test_throws ArgumentError fit_correlation_esprit(
+        training_samples,
+        training_times;
+        fit_rank=1,
+        hankel_rows=1,
+        common_keywords...,
+    )
+    @test_throws ArgumentError fit_correlation_esprit(
+        training_samples,
+        training_times;
+        fit_rank=1,
+        hankel_rows=length(training_samples),
+        common_keywords...,
+    )
+    @test_throws ArgumentError fit_correlation_esprit(
+        training_samples,
+        training_times;
+        fit_rank=3,
+        hankel_rows=3,
+        common_keywords...,
+    )
+    automatic_fit = fit_correlation_esprit(
+        training_samples,
+        training_times;
+        fit_rank=0,
+        fit_rank_max=2,
+        hankel_rows=3,
+        common_keywords...,
+    )
+    @test length(automatic_fit.rates) == 1
+end
+
+@testset "single-pole ESPRIT fit reports no pair separation" begin
+    training_times = collect(0.0:0.1:2.0)
+    training_samples = ComplexF64[exp(-0.4 * time) for time in training_times]
+    validation_times = collect(0.05:0.1:1.95)
+    validation_samples = ComplexF64[exp(-0.4 * time) for time in validation_times]
+    fit = fit_correlation_esprit(
+        training_samples,
+        training_times;
+        fit_rank=1,
+        validation_samples,
+        validation_times,
+        fit_absolute_tolerance=1e-10,
+        fit_relative_tolerance=1e-10,
+    )
+
+    @test length(fit.rates) == 1
+    @test fit.metadata.minimum_pole_separation == Inf
+end
+
 @testset "correlation validation rejects either inaccurate branch" begin
     rates = ComplexF64[0.4 + 0.2im, 0.4 - 0.2im]
     coeff_forward = ComplexF64[0.7 + 0.1im, 0.2 - 0.05im]
@@ -840,6 +903,7 @@ end
         )
             @test occursin(label, diagnostics)
         end
+        @test occursin("minimum_pole_separation = Inf", diagnostics)
     end
 end
 
@@ -903,9 +967,79 @@ end
         @test occursin("harmonic_no_bath", metadata)
         @test occursin("quartic_bath", metadata)
         @test occursin("coeff_forward", metadata)
+        @test occursin("minimum_pole_separation = Inf", metadata)
         @test correlation_calls[] == 1
         @test propagation_calls[] == 4
         @test comparison_plot_calls[] == 1
+    end
+end
+
+@testset "quartic workflow cleanup preserves ambiguous concurrent targets" begin
+    one_site_config = QuarticConfig(
+        site_count=1,
+        site_energies=[0.0],
+        hopping=0.0,
+        d_raw=4,
+        d_keep=2,
+        final_time=0.1,
+        time_step=0.1,
+    )
+    two_site_config = quartic_test_config_with(
+        one_site_config;
+        site_count=2,
+        site_energies=[0.0, 0.0],
+    )
+    fit = quartic_test_fit()
+    propagator = (model, config) -> quartic_test_zero_result(model, config)
+
+    mktempdir() do directory
+        competing_contents = "concurrent one-site target"
+        failing_writer = (path, result; overwrite=false) -> begin
+            @test !overwrite
+            write(path, competing_contents)
+            error("writer failed after a concurrent target appeared")
+        end
+        @test_throws ErrorException one_site_main(
+            one_site_config;
+            output_directory=directory,
+            correlation_builder=_ -> fit,
+            propagator,
+            csv_writer=failing_writer,
+            plotter=nothing,
+            progress_io=IOBuffer(),
+        )
+        path = joinpath(directory, "one_site.csv")
+        @test isfile(path)
+        @test read(path, String) == competing_contents
+    end
+
+    mktempdir() do directory
+        call_count = Ref(0)
+        competing_contents = "concurrent two-site target"
+        partially_failing_writer = (path, result; overwrite=false) -> begin
+            @test !overwrite
+            call_count[] += 1
+            if call_count[] == 1
+                write(path, "owned output")
+                return path
+            end
+            write(path, competing_contents)
+            error("writer failed after a concurrent target appeared")
+        end
+        @test_throws ErrorException two_site_main(
+            two_site_config;
+            output_directory=directory,
+            correlation_builder=_ -> fit,
+            propagator,
+            csv_writer=partially_failing_writer,
+            plotter=nothing,
+            progress_io=IOBuffer(),
+        )
+        first_path = joinpath(directory, "harmonic_no_bath.csv")
+        competing_path = joinpath(directory, "harmonic_bath.csv")
+        @test !ispath(first_path)
+        @test isfile(competing_path)
+        @test read(competing_path, String) == competing_contents
     end
 end
 

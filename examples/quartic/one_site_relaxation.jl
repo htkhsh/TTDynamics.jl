@@ -179,12 +179,17 @@ function one_site_main(
     result = propagator(model, config)
 
     mkpath(String(output_directory))
+    published_paths = String[]
     try
         csv_writer(paths.csv, result; overwrite)
-        plotter === nothing || plotter(paths, result; overwrite)
+        push!(published_paths, paths.csv)
+        if plotter !== nothing
+            plotter(paths, result; overwrite)
+            append!(published_paths, plot_paths)
+        end
     catch
         if !overwrite
-            for path in expected_paths
+            for path in published_paths
                 rm(path; force=true)
             end
         end
