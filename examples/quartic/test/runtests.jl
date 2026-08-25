@@ -59,6 +59,26 @@ function quartic_test_product_vector(dimensions)
     ])
 end
 
+function quartic_test_zero_result(model, config)
+    populations = zeros(Float64, config.site_count, 1)
+    populations[1, 1] = 1
+    return (;
+        times=[0.0],
+        populations,
+        trace=ComplexF64[1],
+        electron_number=ComplexF64[1],
+        oscillator_q=zeros(config.site_count, 1),
+        oscillator_q2=zeros(config.site_count, 1),
+        oscillator_energy=zeros(config.site_count, 1),
+        hermiticity_error=[0.0],
+        maximum_rank=[1],
+        mean_rank=[1.0],
+        tamen_residual=Union{Missing,Float64}[missing],
+        tamen_truncation=Union{Missing,Float64}[missing],
+        final_state=model.initial_state,
+    )
+end
+
 @testset "quartic bath correlation sampling" begin
     cfg = QuarticConfig(
         temperature=0.5,
@@ -630,4 +650,218 @@ end
     @test maximum(bath_result.hermiticity_error) < bath_config.hermiticity_tolerance
     @test maximum(abs.(bath_result.electron_number .- 1)) <
           bath_config.electron_number_tolerance
+end
+
+@testset "quartic executable sources are import safe" begin
+    cairo_was_loaded = isdefined(@__MODULE__, :CairoMakie)
+    mktempdir() do directory
+        stdout_path = joinpath(directory, "stdout.txt")
+        stderr_path = joinpath(directory, "stderr.txt")
+        open(stdout_path, "w") do output
+            open(stderr_path, "w") do error_output
+                cd(directory) do
+                    redirect_stdout(output) do
+                        redirect_stderr(error_output) do
+                            include(joinpath(@__DIR__, "..", "one_site_relaxation.jl"))
+                            include(joinpath(@__DIR__, "..", "two_site_transfer.jl"))
+                        end
+                    end
+                end
+            end
+        end
+        @test read(stdout_path, String) == ""
+        @test read(stderr_path, String) == ""
+        @test sort(readdir(directory)) == ["stderr.txt", "stdout.txt"]
+    end
+    @test isdefined(@__MODULE__, :CairoMakie) == cairo_was_loaded
+end
+
+@testset "one-site quartic workflow uses injected boundaries" begin
+    config = QuarticConfig(
+        site_count=1,
+        site_energies=[0.0],
+        hopping=0.0,
+        d_raw=4,
+        d_keep=2,
+        bath_lambda=0.1,
+        hierarchy_nmax=1,
+        final_time=0.1,
+        time_step=0.1,
+    )
+    fit = quartic_test_fit()
+    correlation_calls = Ref(0)
+    propagation_calls = Ref(0)
+    plot_calls = Ref(0)
+    correlation_builder = _ -> begin
+        correlation_calls[] += 1
+        fit
+    end
+    propagator = (model, propagated_config) -> begin
+        propagation_calls[] += 1
+        @test propagated_config === config
+        quartic_test_zero_result(model, propagated_config)
+    end
+    plotter = (paths, result; overwrite=false) -> begin
+        plot_calls[] += 1
+        @test basename(paths.oscillator_q) == "one_site_q.png"
+        @test !overwrite
+        nothing
+    end
+
+    mktempdir() do directory
+        progress = IOBuffer()
+        workflow = one_site_main(
+            config;
+            output_directory=directory,
+            correlation_builder,
+            propagator,
+            plotter,
+            progress_io=progress,
+        )
+        @test workflow.result.times == [0.0]
+        @test workflow.fit === fit
+        @test workflow.config === config
+        @test isfile(workflow.paths.csv)
+        @test correlation_calls[] == 1
+        @test propagation_calls[] == 1
+        @test plot_calls[] == 1
+        diagnostics = String(take!(progress))
+        for label in (
+            "rates",
+            "coeff_forward",
+            "coeff_backward",
+            "training_absolute_error",
+            "training_relative_error",
+            "validation_absolute_error",
+            "validation_relative_error",
+            "vandermonde_condition",
+            "minimum_pole_separation",
+        )
+            @test occursin(label, diagnostics)
+        end
+    end
+end
+
+@testset "two-site workflow reuses one finite-bath fit across four cases" begin
+    config = QuarticConfig(
+        site_count=2,
+        site_energies=[0.1, -0.1],
+        hopping=0.2,
+        d_raw=4,
+        d_keep=2,
+        K4=0.15,
+        bath_lambda=0.1,
+        hierarchy_nmax=1,
+        final_time=0.1,
+        time_step=0.1,
+    )
+    fit = quartic_test_fit()
+    correlation_calls = Ref(0)
+    propagation_calls = Ref(0)
+    comparison_plot_calls = Ref(0)
+    correlation_builder = _ -> begin
+        correlation_calls[] += 1
+        fit
+    end
+    propagator = (model, propagated_config) -> begin
+        propagation_calls[] += 1
+        quartic_test_zero_result(model, propagated_config)
+    end
+    plotter = (path, cases; overwrite=false) -> begin
+        comparison_plot_calls[] += 1
+        @test basename(path) == "two_site_population_comparison.png"
+        @test length(cases) == 4
+        @test !overwrite
+        nothing
+    end
+
+    mktempdir() do directory
+        workflow = two_site_main(
+            config;
+            output_directory=directory,
+            correlation_builder,
+            propagator,
+            plotter,
+            progress_io=IOBuffer(),
+        )
+        labels = getfield.(workflow.cases, :label)
+        @test labels == [
+            "harmonic_no_bath",
+            "harmonic_bath",
+            "quartic_no_bath",
+            "quartic_bath",
+        ]
+        @test getfield.(workflow.cases, :fit) == [nothing, fit, nothing, fit]
+        @test getfield.(getfield.(workflow.cases, :config), :bath_lambda) ==
+              [0.0, config.bath_lambda, 0.0, config.bath_lambda]
+        @test getfield.(getfield.(workflow.cases, :config), :K4) ==
+              [0.0, 0.0, config.K4, config.K4]
+        @test all(case -> isfile(case.paths.csv), workflow.cases)
+        @test isfile(workflow.metadata_path)
+        metadata = read(workflow.metadata_path, String)
+        @test occursin("harmonic_no_bath", metadata)
+        @test occursin("quartic_bath", metadata)
+        @test occursin("coeff_forward", metadata)
+        @test correlation_calls[] == 1
+        @test propagation_calls[] == 4
+        @test comparison_plot_calls[] == 1
+    end
+end
+
+@testset "quartic workflows preflight outputs before expensive work" begin
+    one_site_config = QuarticConfig(
+        site_count=1,
+        site_energies=[0.0],
+        hopping=0.0,
+        d_raw=4,
+        d_keep=2,
+        final_time=0.1,
+        time_step=0.1,
+    )
+    two_site_config = quartic_test_config_with(
+        one_site_config;
+        site_count=2,
+        site_energies=[0.0, 0.0],
+    )
+    builder_calls = Ref(0)
+    forbidden_builder = _ -> begin
+        builder_calls[] += 1
+        error("correlation builder must not run after failed output preflight")
+    end
+
+    mktempdir() do directory
+        write(joinpath(directory, "one_site.csv"), "existing")
+        @test_throws ArgumentError one_site_main(
+            one_site_config;
+            output_directory=directory,
+            correlation_builder=forbidden_builder,
+            progress_io=IOBuffer(),
+        )
+    end
+    mktempdir() do directory
+        write(joinpath(directory, "two_site_metadata.txt"), "existing")
+        @test_throws ArgumentError two_site_main(
+            two_site_config;
+            output_directory=directory,
+            correlation_builder=forbidden_builder,
+            progress_io=IOBuffer(),
+        )
+    end
+    @test builder_calls[] == 0
+end
+
+@testset "quartic plot publication is atomic without loading CairoMakie" begin
+    cairo_was_loaded = isdefined(@__MODULE__, :CairoMakie)
+    mktempdir() do directory
+        path = joinpath(directory, "diagnostic.png")
+        @test _quartic_publish_png(path) do temporary_path
+            write(temporary_path, "png fixture")
+        end == path
+        @test read(path, String) == "png fixture"
+        @test_throws ArgumentError _quartic_publish_png(path) do temporary_path
+            write(temporary_path, "replacement")
+        end
+        @test read(path, String) == "png fixture"
+    end
+    @test isdefined(@__MODULE__, :CairoMakie) == cairo_was_loaded
 end
