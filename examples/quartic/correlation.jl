@@ -223,6 +223,8 @@ function _validated_conjugate_closed_rates(
         push!(rates, ComplexF64(real_part, imaginary_part))
     end
 
+    _reject_exact_duplicate_rates(rates)
+
     original_count = length(rates)
     for index in 1:original_count
         partner = conj(rates[index])
@@ -231,7 +233,17 @@ function _validated_conjugate_closed_rates(
             push!(corrections, "added conjugate partner for pole $index")
         end
     end
+    _reject_exact_duplicate_rates(rates)
     return rates, corrections
+end
+
+function _reject_exact_duplicate_rates(rates)
+    for first in 1:(length(rates) - 1), second in (first + 1):length(rates)
+        rates[first] == rates[second] && throw(ArgumentError(
+            "pole basis contains an exact duplicate after numerical corrections",
+        ))
+    end
+    return nothing
 end
 
 _correlation_vandermonde(rates, times) =
@@ -313,6 +325,65 @@ function _validation_errors(rates, coefficients, samples, times)
     return _correlation_errors(predicted, sample_values)
 end
 
+function _validated_independent_data(
+    samples,
+    times,
+    training_times;
+    grid_tolerance,
+)
+    samples === nothing && throw(ArgumentError("validation_samples must be provided"))
+    times === nothing && throw(ArgumentError("validation_times must be provided"))
+    sample_values = ComplexF64.(samples)
+    time_values = Float64.(times)
+    length(sample_values) == length(time_values) ||
+        throw(ArgumentError("validation samples and times must have matching lengths"))
+    isempty(sample_values) && throw(ArgumentError("validation data must be nonempty"))
+    all(isfinite, sample_values) || throw(ArgumentError("validation samples must be finite"))
+    all(isfinite, time_values) || throw(ArgumentError("validation times must be finite"))
+    for validation_time in time_values, training_time in training_times
+        isapprox(
+            validation_time,
+            training_time;
+            atol=grid_tolerance,
+            rtol=grid_tolerance,
+        ) && throw(ArgumentError(
+            "validation times must not reuse training times",
+        ))
+    end
+    return sample_values, time_values
+end
+
+function _both_branch_errors(rates, coeff_forward, coeff_backward, samples, times)
+    sample_values = ComplexF64.(samples)
+    forward = _validation_errors(rates, coeff_forward, sample_values, times)
+    backward = _validation_errors(rates, coeff_backward, conj.(sample_values), times)
+    return (forward=forward, backward=backward)
+end
+
+function _enforce_both_branch_errors(
+    errors;
+    fit_absolute_tolerance,
+    fit_relative_tolerance,
+    label,
+)
+    _enforce_correlation_error(
+        errors.forward...;
+        fit_absolute_tolerance=fit_absolute_tolerance,
+        fit_relative_tolerance=fit_relative_tolerance,
+        label="$label forward",
+    )
+    _enforce_correlation_error(
+        errors.backward...;
+        fit_absolute_tolerance=fit_absolute_tolerance,
+        fit_relative_tolerance=fit_relative_tolerance,
+        label="$label backward",
+    )
+    return (
+        absolute_error=max(errors.forward[1], errors.backward[1]),
+        relative_error=max(errors.forward[2], errors.backward[2]),
+    )
+end
+
 """
     validate_correlation_fit(fit, samples, times; kwargs...)
 
@@ -324,27 +395,29 @@ function validate_correlation_fit(
     fit::ExponentialCorrelation,
     samples,
     times;
-    branch=:forward,
     fit_absolute_tolerance=1e-8,
     fit_relative_tolerance=1e-6,
 )
-    coefficients = if branch === :forward
-        fit.coeff_forward
-    elseif branch === :backward
-        fit.coeff_backward
-    else
-        throw(ArgumentError("branch must be :forward or :backward"))
-    end
-    absolute_error, relative_error =
-        _validation_errors(fit.rates, coefficients, samples, times)
-    _enforce_correlation_error(
-        absolute_error,
-        relative_error;
+    errors = _both_branch_errors(
+        fit.rates,
+        fit.coeff_forward,
+        fit.coeff_backward,
+        samples,
+        times,
+    )
+    conservative = _enforce_both_branch_errors(
+        errors;
         fit_absolute_tolerance=fit_absolute_tolerance,
         fit_relative_tolerance=fit_relative_tolerance,
         label="validation",
     )
-    return (absolute_error=absolute_error, relative_error=relative_error)
+    return (;
+        conservative...,
+        forward_absolute_error=errors.forward[1],
+        forward_relative_error=errors.forward[2],
+        backward_absolute_error=errors.backward[1],
+        backward_relative_error=errors.backward[2],
+    )
 end
 
 """
@@ -381,6 +454,12 @@ function fit_correlation_esprit(
     length(sample_values) == length(time_values) ||
         throw(ArgumentError("samples and times must have matching lengths"))
     all(isfinite, sample_values) || throw(ArgumentError("samples must be finite"))
+    validation_sample_values, validation_time_values = _validated_independent_data(
+        validation_samples,
+        validation_times,
+        time_values;
+        grid_tolerance=grid_tolerance,
+    )
 
     candidate_rates = _extract_esprit_candidates(
         sample_values,
@@ -400,8 +479,18 @@ function fit_correlation_esprit(
     vandermonde = _correlation_vandermonde(rates, time_values)
     decomposition = svd(vandermonde)
     singular_values = Float64.(decomposition.S)
-    condition_number = Float64(cond(vandermonde))
-    all(isfinite, singular_values) && isfinite(condition_number) ||
+    all(isfinite, singular_values) ||
+        throw(ArgumentError("common pole basis has nonfinite conditioning diagnostics"))
+    column_count = size(vandermonde, 2)
+    column_count <= size(vandermonde, 1) || throw(ArgumentError(
+        "common pole basis has more columns than training samples",
+    ))
+    rank_threshold = maximum(size(vandermonde)) * eps(Float64) * first(singular_values)
+    count(>(rank_threshold), singular_values) == column_count || throw(ArgumentError(
+        "common pole basis is numerically column-rank deficient",
+    ))
+    condition_number = first(singular_values) / last(singular_values)
+    isfinite(condition_number) ||
         throw(ArgumentError("common pole basis has nonfinite conditioning diagnostics"))
 
     coeff_forward = ComplexF64.(vandermonde \ sample_values)
@@ -409,45 +498,43 @@ function fit_correlation_esprit(
     all(isfinite, coeff_forward) && all(isfinite, coeff_backward) ||
         throw(ArgumentError("common-basis coefficient fit is nonfinite"))
 
-    training_absolute_error, training_relative_error =
-        _correlation_errors(vandermonde * coeff_forward, sample_values)
-    _enforce_correlation_error(
-        training_absolute_error,
-        training_relative_error;
+    training_branch_errors = _both_branch_errors(
+        rates,
+        coeff_forward,
+        coeff_backward,
+        sample_values,
+        time_values,
+    )
+    training_errors = _enforce_both_branch_errors(
+        training_branch_errors;
         fit_absolute_tolerance=fit_absolute_tolerance,
         fit_relative_tolerance=fit_relative_tolerance,
         label="training",
     )
 
-    (validation_samples === nothing) == (validation_times === nothing) ||
-        throw(ArgumentError("validation_samples and validation_times must be provided together"))
-    validation_absolute_error, validation_relative_error = if validation_samples === nothing
-        (0.0, 0.0)
-    else
-        errors = _validation_errors(
-            rates,
-            coeff_forward,
-            validation_samples,
-            validation_times,
-        )
-        _enforce_correlation_error(
-            errors...;
-            fit_absolute_tolerance=fit_absolute_tolerance,
-            fit_relative_tolerance=fit_relative_tolerance,
-            label="validation",
-        )
-        errors
-    end
+    validation_branch_errors = _both_branch_errors(
+        rates,
+        coeff_forward,
+        coeff_backward,
+        validation_sample_values,
+        validation_time_values,
+    )
+    validation_errors = _enforce_both_branch_errors(
+        validation_branch_errors;
+        fit_absolute_tolerance=fit_absolute_tolerance,
+        fit_relative_tolerance=fit_relative_tolerance,
+        label="validation",
+    )
 
     minimum_separation = Float64(_minimum_pole_separation(rates))
     maximum_coefficient = Float64(maximum(abs, [coeff_forward; coeff_backward]))
     all(isfinite, (minimum_separation, maximum_coefficient)) ||
         throw(ArgumentError("common pole basis has nonfinite diagnostics"))
     metadata = CorrelationFitMetadata(
-        training_absolute_error,
-        training_relative_error,
-        validation_absolute_error,
-        validation_relative_error,
+        training_errors.absolute_error,
+        training_errors.relative_error,
+        validation_errors.absolute_error,
+        validation_errors.relative_error,
         dt,
         (first(time_values), last(time_values)),
         singular_values,

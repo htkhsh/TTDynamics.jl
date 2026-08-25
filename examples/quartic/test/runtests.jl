@@ -93,6 +93,11 @@ end
         sum(coefficients[index] * exp(-rates[index] * time) for index in eachindex(rates))
         for time in times
     ]
+    validation_times = collect(0.025:0.05:3.975)
+    validation_samples = ComplexF64[
+        sum(coefficients[index] * exp(-rates[index] * time) for index in eachindex(rates))
+        for time in validation_times
+    ]
 
     fit = fit_correlation_esprit(
         samples,
@@ -101,12 +106,15 @@ end
         pole_stability_tolerance=1e-10,
         duplicate_pole_tolerance=1e-8,
         fit_relative_tolerance=1e-8,
+        validation_samples=validation_samples,
+        validation_times=validation_times,
     )
 
     @test norm(evaluate_correlation(fit, times) - samples) / norm(samples) < 1e-8
     @test norm(evaluate_correlation(fit, times; branch=:backward) - conj.(samples)) /
           norm(samples) < 1e-8
     @test length(fit.rates) == 4
+    @test 0 < fit.metadata.minimum_pole_separation < 0.01
     @test all(
         rate -> any(
             other -> isapprox(rate, conj(other); atol=1e-8, rtol=0),
@@ -116,22 +124,48 @@ end
     )
 end
 
+@testset "complex ESPRIT requires disjoint validation data" begin
+    training_times = collect(0.0:0.1:2.0)
+    samples = ComplexF64[exp(-(0.4 + 0.2im) * time) for time in training_times]
+
+    @test_throws ArgumentError fit_correlation_esprit(
+        samples,
+        training_times;
+        fit_rank=1,
+    )
+    @test_throws ArgumentError fit_correlation_esprit(
+        samples,
+        training_times;
+        fit_rank=1,
+        validation_samples=samples,
+        validation_times=training_times,
+    )
+end
+
 @testset "complex ESPRIT rejects invalid grids and unstable poles" begin
     uniform_times = collect(0.0:0.1:2.0)
     decaying_samples = ComplexF64[exp(-(0.4 + 0.2im) * time) for time in uniform_times]
+    validation_times = collect(0.05:0.1:1.95)
+    decaying_validation =
+        ComplexF64[exp(-(0.4 + 0.2im) * time) for time in validation_times]
     nonuniform_times = copy(uniform_times)
     nonuniform_times[8] += 0.01
     @test_throws ArgumentError fit_correlation_esprit(
         decaying_samples,
         nonuniform_times;
         fit_rank=1,
+        validation_samples=decaying_validation,
+        validation_times=validation_times,
     )
 
     growing_samples = ComplexF64[exp(0.2 * time) for time in uniform_times]
+    growing_validation = ComplexF64[exp(0.2 * time) for time in validation_times]
     @test_throws ArgumentError fit_correlation_esprit(
         growing_samples,
         uniform_times;
         fit_rank=1,
+        validation_samples=growing_validation,
+        validation_times=validation_times,
     )
 
     dt = uniform_times[2] - uniform_times[1]
@@ -149,6 +183,48 @@ end
     )
     @test real(first(corrected_rates)) == 0
     @test any(contains("corrected to zero"), corrections)
+
+    @test_throws ArgumentError _validated_conjugate_closed_rates(
+        ComplexF64[-5e-11 + 0im, 0.0 + 0im],
+        dt;
+        pole_stability_tolerance=1e-10,
+        duplicate_pole_tolerance=1e-8,
+    )
+end
+
+@testset "correlation validation rejects either inaccurate branch" begin
+    rates = ComplexF64[0.4 + 0.2im, 0.4 - 0.2im]
+    coeff_forward = ComplexF64[0.7 + 0.1im, 0.2 - 0.05im]
+    coeff_backward = zeros(ComplexF64, 2)
+    metadata = CorrelationFitMetadata(
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.1,
+        (0.0, 1.0),
+        [1.0, 0.5],
+        2.0,
+        0.4,
+        maximum(abs, coeff_forward),
+        String[],
+    )
+    fit = ExponentialCorrelation(rates, coeff_forward, coeff_backward, metadata)
+    validation_times = collect(0.05:0.1:0.95)
+    validation_samples = ComplexF64[
+        sum(
+            coeff_forward[index] * exp(-rates[index] * time)
+            for index in eachindex(rates)
+        ) for time in validation_times
+    ]
+
+    @test_throws ArgumentError validate_correlation_fit(
+        fit,
+        validation_samples,
+        validation_times;
+        fit_absolute_tolerance=1e-10,
+        fit_relative_tolerance=1e-10,
+    )
 end
 
 @testset "complex ESPRIT validates cBO fits away from training points" begin
@@ -182,10 +258,25 @@ end
         validation_samples=validation_samples,
         validation_times=validation_times,
     )
-    holdout_error = norm(evaluate_correlation(fit, validation_times) - validation_samples) /
-                    norm(validation_samples)
-    @test holdout_error < 0.1
-    @test fit.metadata.validation_relative_error ≈ holdout_error rtol=1e-12
+    holdout_forward_error =
+        norm(evaluate_correlation(fit, validation_times) - validation_samples) /
+        norm(validation_samples)
+    holdout_backward_error = norm(
+        evaluate_correlation(fit, validation_times; branch=:backward) -
+        conj.(validation_samples),
+    ) / norm(validation_samples)
+    training_forward_error =
+        norm(evaluate_correlation(fit, training_times) - training_samples) /
+        norm(training_samples)
+    training_backward_error = norm(
+        evaluate_correlation(fit, training_times; branch=:backward) -
+        conj.(training_samples),
+    ) / norm(training_samples)
+    @test max(holdout_forward_error, holdout_backward_error) < 0.1
+    @test fit.metadata.validation_relative_error ≈
+          max(holdout_forward_error, holdout_backward_error) rtol=1e-10
+    @test fit.metadata.training_relative_error ≈
+          max(training_forward_error, training_backward_error) rtol=1e-10
     @test all(isfinite, fit.metadata.singular_values)
     @test all(
         isfinite,
@@ -209,6 +300,8 @@ end
             fit_rank=rank,
             fit_absolute_tolerance=1e-4,
             fit_relative_tolerance=0.5,
+            validation_samples=validation_samples,
+            validation_times=validation_times,
         )
         diagnostics = validate_correlation_fit(
             rank_fit,
