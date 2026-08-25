@@ -2,10 +2,61 @@ using LinearAlgebra
 using QuadGK
 using TTDynamics
 using Test
+using TTSolver
 
 include("../config.jl")
 include("../oscillator.jl")
 include("../correlation.jl")
+include("../model.jl")
+
+function quartic_test_config_with(config::QuarticConfig; kwargs...)
+    names = fieldnames(QuarticConfig)
+    values = NamedTuple{names}(Tuple(getfield(config, name) for name in names))
+    return QuarticConfig(; merge(values, kwargs)...)
+end
+
+function quartic_test_fit()
+    metadata = CorrelationFitMetadata(
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.1,
+        (0.0, 1.0),
+        [1.0],
+        1.0,
+        Inf,
+        0.2,
+        String[],
+    )
+    return ExponentialCorrelation(
+        ComplexF64[0.7 + 0.1im],
+        ComplexF64[0.16 - 0.04im],
+        ComplexF64[0.16 + 0.04im],
+        metadata,
+    )
+end
+
+function quartic_test_projector(dimension, index)
+    operator = zeros(ComplexF64, dimension, dimension)
+    operator[index, index] = 1
+    return operator
+end
+
+function quartic_test_liouvillian_term(factors)
+    return -1im * (
+        tt_mkron(liouville_left.(factors)) -
+        tt_mkron(liouville_right.(factors))
+    )
+end
+
+function quartic_test_product_vector(dimensions)
+    local_vectors = [ComplexF64.(1:dimension) ./ dimension for dimension in dimensions]
+    return TTTensor([
+        reshape(vector, 1, length(vector), 1)
+        for vector in local_vectors
+    ])
+end
 
 @testset "quartic bath correlation sampling" begin
     cfg = QuarticConfig(
@@ -315,4 +366,138 @@ end
     @test length(rank_errors) == 2
     @test all(isfinite, rank_errors)
     @test all(<(0.5), rank_errors)
+end
+
+@testset "quartic physical Hamiltonian has local Hilbert-core ordering and no counter term" begin
+    config = QuarticConfig(
+        site_count=2,
+        site_energies=[0.25, -0.15],
+        hopping=0.4,
+        g=0.3,
+        d_raw=8,
+        d_keep=3,
+        hierarchy_nmax=1,
+        operator_tolerance=1e-14,
+    )
+    mode = build_quartic_mode(config)
+    fit = quartic_test_fit()
+    model = build_quartic_model(config, mode, fit; initial_site=1)
+
+    electron_hamiltonian = ComplexF64[0.25 -0.4; -0.4 -0.15]
+    I2 = Matrix{ComplexF64}(I, 2, 2)
+    I3 = Matrix{ComplexF64}(I, 3, 3)
+    expected = kron(electron_hamiltonian, I3, I3) +
+               kron(I2, mode.hamiltonian, I3) +
+               kron(I2, I3, mode.hamiltonian) +
+               config.g * kron(quartic_test_projector(2, 1), mode.q, I3) +
+               config.g * kron(quartic_test_projector(2, 2), I3, mode.q)
+
+    @test tt_full(model.system_hamiltonian) ≈ expected atol=1e-11
+    @test model.system.physical_dimensions == [4, 9, 9]
+    @test getfield.(model.system.couplings, :physical_core) == [2, 3]
+    @test all(coupling -> coupling.correlation === fit, model.system.couplings)
+    @test model.system.hierarchy_sizes == [2, 2]
+
+    changed_bath = quartic_test_config_with(
+        config;
+        bath_lambda=2config.bath_lambda,
+        bath_gamma=3config.bath_gamma,
+        temperature=2config.temperature,
+    )
+    @test tt_full(build_system_mpo(changed_bath, mode)) ≈
+          tt_full(build_system_mpo(config, mode)) atol=1e-11
+end
+
+@testset "quartic factorized state and physical observables" begin
+    config = QuarticConfig(
+        site_count=2,
+        d_raw=8,
+        d_keep=3,
+        hierarchy_nmax=1,
+        operator_tolerance=1e-12,
+        state_rounding_tolerance=1e-12,
+    )
+    mode = build_quartic_mode(config)
+    model = build_quartic_model(config, mode, quartic_test_fit(); initial_site=2)
+    observables = model.observables
+    state = model.initial_state
+
+    populations = ComplexF64[
+        root_expectation(state, model.system, observable)
+        for observable in observables.electron_populations
+    ]
+    @test root_expectation(state, model.system, observables.trace) ≈ 1 atol=1e-11
+    @test populations ≈ [0, 1] atol=1e-11
+    @test sum(populations) ≈ 1 atol=1e-11
+    @test root_expectation(state, model.system, observables.electron_number) ≈ 1 atol=1e-11
+    @test length(observables.oscillator_q) == config.site_count
+    @test length(observables.oscillator_q2) == config.site_count
+    @test length(observables.oscillator_hamiltonian) == config.site_count
+    @test all(
+        observable -> tt_dims(observable) == model.system.physical_dimensions,
+        [
+            observables.electron_populations
+            observables.oscillator_q
+            observables.oscillator_q2
+            observables.oscillator_hamiltonian
+            [observables.trace, observables.electron_number]
+        ],
+    )
+end
+
+@testset "quartic zero coupling factorizes and zero bath takes the closed-system path" begin
+    config = QuarticConfig(
+        site_count=2,
+        site_energies=[0.2, -0.1],
+        hopping=0.35,
+        g=0.0,
+        d_raw=6,
+        d_keep=2,
+        hierarchy_nmax=1,
+        operator_tolerance=1e-12,
+    )
+    mode = build_quartic_mode(config)
+    fit = quartic_test_fit()
+    model = build_quartic_model(config, mode, fit)
+
+    electron_hamiltonian = ComplexF64[0.2 -0.35; -0.35 -0.1]
+    I2 = Matrix{ComplexF64}(I, 2, 2)
+    physical_liouvillian = quartic_test_liouvillian_term(
+        [electron_hamiltonian, I2, I2],
+    )
+    for site in 1:config.site_count
+        factors = [I2, I2, I2]
+        factors[site + 1] = mode.hamiltonian
+        physical_liouvillian += quartic_test_liouvillian_term(factors)
+    end
+    expected_system = MultiCoreHEOMTTSystem(
+        physical_liouvillian,
+        [4, 4, 4],
+        [
+            LocalBathCoupling(2, mode.q, fit),
+            LocalBathCoupling(3, mode.q, fit),
+        ],
+        [2, 2],
+    )
+    expected_generator = build_multicore_heom_generator(
+        expected_system;
+        tol=config.operator_tolerance,
+    )
+    generator_probe = quartic_test_product_vector(multicore_heom_dimensions(model.system))
+    generator_action = model.generator * generator_probe
+    expected_action = expected_generator * generator_probe
+    @test tt_norm(generator_action - expected_action) <=
+          10sqrt(eps(Float64)) * max(tt_norm(expected_action), 1)
+
+    no_bath_config = quartic_test_config_with(config; bath_lambda=0.0)
+    no_bath = build_quartic_model(no_bath_config, mode, fit)
+    @test isempty(no_bath.system.couplings)
+    @test isempty(no_bath.system.hierarchy_sizes)
+    @test multicore_heom_dimensions(no_bath.system) == [4, 4, 4]
+    closed_probe = quartic_test_product_vector(multicore_heom_dimensions(no_bath.system))
+    closed_action = no_bath.generator * closed_probe
+    physical_action = no_bath.system.physical_liouvillian * closed_probe
+    @test tt_norm(closed_action - physical_action) <=
+          10sqrt(eps(Float64)) * max(tt_norm(physical_action), 1)
+    @test build_quartic_model(no_bath_config, mode, nothing).fit === nothing
 end
