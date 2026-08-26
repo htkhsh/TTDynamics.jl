@@ -33,7 +33,7 @@ struct LatticeFrohlichCurrentCorrelationConfig
 end
 
 function LatticeFrohlichCurrentCorrelationConfig(
-    ; site_count=9, site_energies_cm=zeros(site_count), hopping_cm=1500.0,
+    ; site_count=7, site_energies_cm=zeros(site_count), hopping_cm=1000.0,
     brownian_frequency_cm=100.0, brownian_damping_cm=180.0,
     reorganization_energy_cm=200.0, temperature_K=300.0, initial_site=1,
     final_time_fs=1000.0, time_step_fs=1.0, pade_order=8,
