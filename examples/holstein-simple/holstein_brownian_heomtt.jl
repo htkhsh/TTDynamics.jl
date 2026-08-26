@@ -104,7 +104,7 @@ function save_simple_holstein_plots(paths, times, populations, trace_values,
     return nothing
 end
 
-function main()
+function main(;
     # Periodic Holstein system, in cm⁻¹ unless stated otherwise.
     site_count=5,
     site_energies_cm=zeros(site_count),

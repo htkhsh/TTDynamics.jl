@@ -13,10 +13,10 @@ include("../examples/lattice_frohlich_current_correlation/current_correlation.jl
 @testset "Lattice Frohlich current configuration" begin
     config = LatticeFrohlichCurrentCorrelationConfig()
     expected = (
-        site_count=5, site_energies_cm=zeros(5), hopping_cm=400.0,
-        brownian_frequency_cm=1400.0, brownian_damping_cm=200.0,
-        reorganization_energy_cm=600.0, temperature_K=300.0,
-        initial_site=1, final_time_fs=500.0, time_step_fs=1.0,
+        site_count=9, site_energies_cm=zeros(9), hopping_cm=1500.0,
+        brownian_frequency_cm=100.0, brownian_damping_cm=180.0,
+        reorganization_energy_cm=200.0, temperature_K=300.0,
+        initial_site=1, final_time_fs=1000.0, time_step_fs=1.0,
         pade_order=8, tpsd_tolerance=2e-2, pade_type=:Nm1,
         validation_final_time_fs=100.0, validation_sample_count=200,
         bcf_upper_bound_cm=10_000.0, hierarchy_local_size=4,
@@ -766,15 +766,15 @@ julia = "1.11"
             @test occursin(parameter, readme)
         end
         for setting in (
-            "site_count = 5",
-            "site_energies_cm = zeros(5)",
-            "hopping_cm = 400.0",
-            "brownian_frequency_cm = 1400.0",
-            "brownian_damping_cm = 200.0",
-            "reorganization_energy_cm = 600.0",
+            "site_count = 9",
+            "site_energies_cm = zeros(9)",
+            "hopping_cm = 1500.0",
+            "brownian_frequency_cm = 100.0",
+            "brownian_damping_cm = 180.0",
+            "reorganization_energy_cm = 200.0",
             "temperature_K = 300.0",
             "initial_site = 1",
-            "final_time_fs = 500.0",
+            "final_time_fs = 1000.0",
             "time_step_fs = 1.0",
             "pade_order = 8",
             "tpsd_tolerance = 2e-2",
