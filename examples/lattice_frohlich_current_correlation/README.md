@@ -81,17 +81,17 @@ in fs.
 
 ```text
 # Periodic lattice and Brownian bath
-site_count = 5
-site_energies_cm = zeros(5)
-hopping_cm = 400.0
-brownian_frequency_cm = 1400.0
-brownian_damping_cm = 200.0
-reorganization_energy_cm = 600.0
+site_count = 9
+site_energies_cm = zeros(9)
+hopping_cm = 1500.0
+brownian_frequency_cm = 100.0
+brownian_damping_cm = 180.0
+reorganization_energy_cm = 200.0
 temperature_K = 300.0
 initial_site = 1
 
 # Stored propagation reference and bath decomposition validation
-final_time_fs = 500.0
+final_time_fs = 1000.0
 time_step_fs = 1.0
 pade_order = 8
 tpsd_tolerance = 2e-2

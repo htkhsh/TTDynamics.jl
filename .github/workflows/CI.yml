@@ -38,6 +38,34 @@ jobs:
       - uses: julia-actions/cache@v2
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
+  quartic-example:
+    name: Quartic example tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.11'
+          arch: x64
+      - uses: julia-actions/cache@v2
+      - name: Configure quartic example environment
+        shell: julia --project=examples/quartic --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.add([
+              PackageSpec(url="https://github.com/htkhsh/TTSolver.jl.git", rev="7a2eb169648257b9619c14bab349d63798bd220a"),
+              PackageSpec(url="https://github.com/DOC-Package/HEOMKit.jl.git", rev="36dc764508b24729a00bce7d96e767a3facead40"),
+              PackageSpec(url="https://github.com/DOC-Package/QFiND.jl.git", rev="474d00ea73643a5fa523114c1b67f84bd31c36a6"),
+              PackageSpec(url="https://github.com/DOC-Package/ExpFit.jl.git", rev="c9abc3870b30341e77574ea1cf818134e14180e0"),
+          ])
+          Pkg.develop(PackageSpec(path=pwd()))
+          Pkg.instantiate()
+      - name: Run quartic example suite
+        run: julia --project=examples/quartic examples/quartic/test/runtests.jl
   docs:
     name: Documentation
     runs-on: ubuntu-latest

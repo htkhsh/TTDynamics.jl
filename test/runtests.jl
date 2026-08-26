@@ -8,11 +8,13 @@ using HEOMKit
 end
 
 include("tt_io.jl")
+include("multicore_heom.jl")
 include("holstein_current_correlation.jl")
 include("heom_twin_space.jl")
 include("lattice_frohlich.jl")
 include("lattice_frohlich_current_correlation.jl")
 include("holstein_simple.jl")
+include("quartic.jl")
 
 include("../examples/tfd/ksl/utils.jl")
 include("../examples/holstein/config.jl")
@@ -60,10 +62,10 @@ include("../examples/holstein/plotting.jl")
     @test LatticeFrohlichCurrentCorrelationConfig !== HolsteinCurrentCorrelationConfig
 end
 
-function assert_holstein_family_default_config(config)
+function assert_holstein_family_default_config(config; site_count=5)
     expected = (
-        site_count=5,
-        site_energies_cm=zeros(5),
+        site_count=site_count,
+        site_energies_cm=zeros(site_count),
         hopping_cm=400.0,
         brownian_frequency_cm=1400.0,
         brownian_damping_cm=200.0,
@@ -102,7 +104,9 @@ end
         assert_holstein_family_default_config(LatticeFrohlichConfig())
     end
     @testset "HolsteinCurrentCorrelationConfig" begin
-        assert_holstein_family_default_config(HolsteinCurrentCorrelationConfig())
+        assert_holstein_family_default_config(
+            HolsteinCurrentCorrelationConfig(); site_count=7,
+        )
     end
 end
 
