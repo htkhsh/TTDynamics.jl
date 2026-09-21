@@ -176,3 +176,10 @@ function build_twin_heom_generator(system::TwinCoreHEOMTTSystem;
     end
     tt_round(generator, tol)
 end
+
+const MultiCoreBathCoupling = TwinCoreBathCoupling
+const MultiCoreHEOMTTSystem = TwinCoreHEOMTTSystem
+multicore_physical_dimensions = twin_core_physical_dimensions
+multicore_heom_dimensions = twin_core_heom_dimensions
+build_multicore_liouvillian = build_twin_liouvillian
+build_multicore_heom_generator = build_twin_heom_generator

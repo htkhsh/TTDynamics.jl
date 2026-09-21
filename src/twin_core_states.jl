@@ -48,6 +48,7 @@ function build_twin_heom_initial_state(
     tt_round(TTTensor(cores), tol)
 end
 
+
 function _validate_twin_heom_state(state::TTTensor, system::TwinCoreHEOMTTSystem)
     expected = twin_core_heom_dimensions(system)
     tt_dims(state) == expected || throw(DimensionMismatch(
@@ -178,3 +179,10 @@ function build_twin_heom_initial_state(
     append!(cores, _hierarchy_vacuum_cores(system.hierarchy_sizes))
     tt_round(TTTensor(cores), tol)
 end
+
+build_multicore_heom_initial_state = build_twin_heom_initial_state
+root_multicore_state = root_twin_state
+build_multicore_observable = build_twin_observable
+build_multicore_trace_observable = build_twin_trace_observable
+build_multicore_local_observable = build_twin_local_observable
+multicore_expectation = twin_expectation
