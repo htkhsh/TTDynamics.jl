@@ -398,7 +398,7 @@ end
     repository_root = normpath(joinpath(@__DIR__, ".."))
     environment_separator = Sys.iswindows() ? ';' : ':'
     default_environments = "@v#.#$(environment_separator)@stdlib"
-    example_dependencies = ["CairoMakie", "ExpFit", "QFiND"]
+    example_dependencies = ["ExpFit", "QFiND"]
 
     if all(package -> !isnothing(Base.find_package(package)), example_dependencies)
         git_common_directory = readchomp(

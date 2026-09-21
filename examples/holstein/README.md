@@ -47,9 +47,10 @@ After setup, the executable remains a single command:
 julia --project=examples/holstein examples/holstein/holstein_brownian_heomtt.jl
 ```
 
-The default calculation propagates for 100 fs and writes one CSV file and three
-PNG files beside the script. For a quick import check that does not start the
-simulation or write outputs, run:
+The default calculation propagates for 100 fs and writes one population CSV
+file beside the script. Optional plotting remains available through
+`plotting.jl` when CairoMakie is installed. For a quick import check that does
+not start the simulation or write outputs, run:
 
 ```bash
 julia --project=examples/holstein -e 'include("examples/holstein/holstein_brownian_heomtt.jl"); @assert DEFAULT_CONFIG.temporal_basis_size == 3'

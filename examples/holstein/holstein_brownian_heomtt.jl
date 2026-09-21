@@ -1,11 +1,11 @@
 using LinearAlgebra, Statistics
-using TTSolver, TTDynamics, QFiND, HEOMKit, CairoMakie
+using TTSolver, TTDynamics, QFiND, HEOMKit
 using HEOMKit: icm2ifs
 
 isdefined(@__MODULE__, :HolsteinConfig) || include("config.jl")
 isdefined(@__MODULE__, :build_holstein_model) || include("model.jl")
 isdefined(@__MODULE__, :run_holstein_dynamics) || include("dynamics.jl")
-isdefined(@__MODULE__, :save_holstein_results) || include("plotting.jl")
+isdefined(@__MODULE__, :save_holstein_results) || include("output.jl")
 
 # IMPORTANT: Before using these numerical defaults for production, converge the
 # Padé order, TPSD tolerance, hierarchy local size, time step, and TT tolerances.
@@ -15,7 +15,7 @@ const DEFAULT_CONFIG = HolsteinConfig()
     main(config=DEFAULT_CONFIG; output_directory=@__DIR__)
 
 Decompose the bath, build and propagate the periodic Holstein HEOM-TT model,
-and write its CSV and plot diagnostics beside this script.
+and write its population CSV beside this script.
 """
 function main(config::HolsteinConfig=DEFAULT_CONFIG; output_directory=@__DIR__)
     validate_holstein_config(config)
@@ -50,9 +50,6 @@ function main(config::HolsteinConfig=DEFAULT_CONFIG; output_directory=@__DIR__)
     trace_drift = maximum(abs.(result.trace .- 1.0))
     println("  Maximum absolute trace drift: $(round(trace_drift, sigdigits=5))")
     println("  Wrote: $(paths.csv_path)")
-    for path in paths.plot_paths
-        println("  Wrote: $path")
-    end
     return result
 end
 
