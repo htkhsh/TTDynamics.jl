@@ -258,6 +258,8 @@ explicit while retaining TT compression across the full operator.
 
 ```julia
 H = tt_mkron(ComplexF64[0 1; 1 0], ComplexF64.(Diagonal(0:2)))
+# `rates`, `forward`, `backward`, `metadata`, `q`, and the density matrices
+# are supplied by the caller using the local-mode/bath fit of choice.
 correlation = ExponentialCorrelation(rates, forward, backward, metadata)
 coupling = TwinCoreBathCoupling(2, q, correlation)
 system = TwinCoreHEOMTTSystem(H, [coupling], [3])
@@ -265,12 +267,17 @@ system = TwinCoreHEOMTTSystem(H, [coupling], [3])
 generator = build_twin_heom_generator(system)
 state = build_twin_heom_initial_state(system, [rho_charge, rho_mode])
 trace_observable = build_twin_trace_observable(system)
-population = twin_expectation(trace_observable, state, system)
+normalization = twin_expectation(trace_observable, state, system)
 ```
 
 Use `build_twin_liouvillian` for a closed system, `root_twin_state` to contract
 hierarchy indices to the physical twin space, and `root_density_matrix` for a
-dense matrix (with its `max_dimension` guard).
+dense matrix (with its `max_dimension=2000` guard). The hierarchy sizes follow
+the caller's coupling order, expanding each coupling's poles in sequence.
+`build_twin_heom_initial_state` accepts either factorized local density matrices
+or a correlated physical twin TT state; `build_twin_observable`,
+`build_twin_local_observable`, and `build_twin_trace_observable` create
+observables without changing the existing global ket/bra HEOM layout.
 
 ### Utilities (util.jl)
 

@@ -85,6 +85,7 @@ function build_twin_observable(local_operators; tol::Float64=1e-12)
 end
 
 function build_twin_trace_observable(system::TwinCoreHEOMTTSystem; tol::Float64=1e-12)
+    isfinite(tol) && tol >= 0 || throw(ArgumentError("tol must be finite and nonnegative"))
     identities = [Matrix{ComplexF64}(I, d, d) for d in system.hilbert_dimensions]
     build_twin_observable(identities; tol)
 end
@@ -93,6 +94,7 @@ function build_twin_local_observable(system::TwinCoreHEOMTTSystem,
                                      subsystem::Integer,
                                      operator::AbstractMatrix;
                                      tol::Float64=1e-12)
+    isfinite(tol) && tol >= 0 || throw(ArgumentError("tol must be finite and nonnegative"))
     1 <= subsystem <= length(system.hilbert_dimensions) ||
         throw(ArgumentError("subsystem must index a physical Hilbert core"))
     expected = system.hilbert_dimensions[subsystem]

@@ -15,6 +15,11 @@ function state_test_correlation()
     ExponentialCorrelation(ComplexF64[0.7], ComplexF64[0.2], ComplexF64[0.2], metadata)
 end
 
+function state_test_correlation()
+    metadata = CorrelationFitMetadata(0, 0, 0, 0, 0.1, (0.0, 1.0), [1.0], 1.0, Inf, 1.0, String[])
+    ExponentialCorrelation(ComplexF64[0.7], ComplexF64[0.2], ComplexF64[0.2], metadata)
+end
+
 @testset "twin-core HEOM initial density states" begin
     H = tt_mkron(ComplexF64[0 1; 1 0], ComplexF64.(Diagonal(0:2)))
     system = TwinCoreHEOMTTSystem(H, TwinCoreBathCoupling[], Int[])
@@ -27,7 +32,10 @@ end
     P = twin_permutation([2, 3])
     expected_interleaved = P * vec(kron(rho1, rho2))
     @test vec(tt_full(state)) ≈ expected_interleaved atol=1e-11
-    correlated = tt_svd(expected_interleaved, [2, 2, 3, 3]; tol=1e-14)
+    # `tt_svd` consumes the internal little-endian ordering; convert from the
+    # public interleaved (kron-compatible) ordering before decomposing.
+    correlated_input = vec(permutedims(reshape(expected_interleaved, 2, 2, 3, 3), 4:-1:1))
+    correlated = tt_svd(correlated_input, [2, 2, 3, 3]; tol=1e-14)
     rebuilt = build_twin_heom_initial_state(system, correlated; tol=1e-14)
     @test vec(tt_full(rebuilt)) ≈ expected_interleaved atol=1e-11
     near_psd = ComplexF64[1 + 1e-13 0; 0 -1e-13]
@@ -64,4 +72,19 @@ end
     dense = root_density_matrix(state, system; max_dimension=10)
     @test dense ≈ kron(rho1, rho2) atol=1e-11
     @test_throws ArgumentError root_density_matrix(state, system; max_dimension=5)
+
+    open_system = TwinCoreHEOMTTSystem(
+        tt_matrix(zeros(ComplexF64, 2, 2)),
+        [TwinCoreBathCoupling(1, Matrix{ComplexF64}(I, 2, 2), state_test_correlation())],
+        [2],
+    )
+    open_state = build_twin_heom_initial_state(
+        open_system, [ComplexF64[0.7 0.1; 0.1 0.3]]; tol=1e-14,
+    )
+    modified_cores = deepcopy(open_state.cores)
+    modified_cores[end][:, 1, :] .*= 2
+    modified_cores[end][:, 2, :] .*= 3
+    modified_state = TTTensor(modified_cores)
+    @test vec(tt_full(root_twin_state(modified_state, open_system))) ≈
+          2 .* vec(tt_full(root_twin_state(open_state, open_system))) atol=1e-11
 end
