@@ -48,14 +48,27 @@ export PhysicalQuantity,
        liouville_right,
        root_density_matrix,
        build_heom_liouvillian,
-       build_initial_state
+       build_initial_state,
+       MultiCoreBathCoupling,
+       MultiCoreHEOMTTSystem,
+       multicore_physical_dimensions,
+       multicore_heom_dimensions,
+       build_multicore_liouvillian,
+       build_multicore_heom_generator,
+       build_multicore_heom_initial_state,
+       root_multicore_state,
+       build_multicore_observable,
+       build_multicore_trace_observable,
+       build_multicore_local_observable,
+       multicore_expectation
 
 include("types.jl")
 include("tt_states.jl")
 include("util.jl")
 include("tfd.jl")
 include("heom.jl")
-include("correlation.jl")
+include("multicore_heom.jl")
+include("multicore_states.jl")
 include("tt_io.jl")
 
 end

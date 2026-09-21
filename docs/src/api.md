@@ -249,6 +249,36 @@ build_initial_state(system::HEOMTTSystem, init_state::Int; tol=1e-12) → TTTens
 Build the twin-space initial density matrix
 `|init_state⟩_ket ⊗ |init_state⟩_bra ⊗ |0,0,...,0⟩`.
 
+### Multi-Subsystem MultiCore HEOM-TT
+
+The multi-subsystem layout stores one ket core and one bra core for every
+physical subsystem, followed by one hierarchy core per bath pole:
+`[ket₁, bra₁, ket₂, bra₂, …, hierarchy]`. This keeps subsystem dimensions
+explicit while retaining TT compression across the full operator.
+
+```julia
+H = tt_mkron(ComplexF64[0 1; 1 0], ComplexF64.(Diagonal(0:2)))
+# `rates`, `forward`, `backward`, `metadata`, `q`, and the density matrices
+# are supplied by the caller using the local-mode/bath fit of choice.
+correlation = ExponentialCorrelation(rates, forward, backward, metadata)
+coupling = MultiCoreBathCoupling(2, q, correlation)
+system = MultiCoreHEOMTTSystem(H, [coupling], [3])
+
+generator = build_multicore_heom_generator(system)
+state = build_multicore_heom_initial_state(system, [rho_charge, rho_mode])
+trace_observable = build_multicore_trace_observable(system)
+normalization = multicore_expectation(trace_observable, state, system)
+```
+
+Use `build_multicore_liouvillian` for a closed system, `root_multicore_state` to contract
+hierarchy indices to the physical twin space, and `root_density_matrix` for a
+dense matrix (with its `max_dimension=2000` guard). The hierarchy sizes follow
+the caller's coupling order, expanding each coupling's poles in sequence.
+`build_multicore_heom_initial_state` accepts either factorized local density matrices
+or a correlated physical multi-core TT state; `build_multicore_observable`,
+`build_multicore_local_observable`, and `build_multicore_trace_observable` create
+observables without changing the existing global ket/bra HEOM layout.
+
 ### Utilities (util.jl)
 
 #### `franck_condon_factors`

@@ -14,13 +14,6 @@ include("heom_twin_space.jl")
 include("lattice_frohlich.jl")
 include("lattice_frohlich_current_correlation.jl")
 include("holstein_simple.jl")
-include("quartic.jl")
-
-include("../examples/tfd/ksl/utils.jl")
-include("../examples/holstein/config.jl")
-include("../examples/holstein/model.jl")
-include("../examples/holstein/dynamics.jl")
-include("../examples/holstein/plotting.jl")
 
 @testset "Holstein-family examples are self-contained" begin
     roots = [
