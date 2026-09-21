@@ -80,3 +80,99 @@ twin_core_physical_dimensions(system::TwinCoreHEOMTTSystem) =
 
 twin_core_heom_dimensions(system::TwinCoreHEOMTTSystem) =
     [twin_core_physical_dimensions(system); system.hierarchy_sizes]
+
+function _twin_bond_identity(rank::Int, dimension::Int)
+    core = zeros(ComplexF64, rank, dimension, dimension, rank)
+    for bond in 1:rank, local_index in 1:dimension
+        core[bond, local_index, local_index, bond] = 1
+    end
+    core
+end
+
+function _twin_left_embedding(hamiltonian::TTMatrix)
+    cores = Array{ComplexF64,4}[]
+    for core in hamiltonian.cores
+        dimension = size(core, 2)
+        push!(cores, ComplexF64.(core))
+        push!(cores, _twin_bond_identity(size(core, 4), dimension))
+    end
+    TTMatrix(cores)
+end
+
+function _twin_right_embedding(hamiltonian::TTMatrix)
+    cores = Array{ComplexF64,4}[]
+    for core in hamiltonian.cores
+        dimension = size(core, 2)
+        push!(cores, _twin_bond_identity(size(core, 1), dimension))
+        push!(cores, ComplexF64.(permutedims(core, (1, 3, 2, 4))))
+    end
+    TTMatrix(cores)
+end
+
+function build_twin_liouvillian(hamiltonian::TTMatrix; tol::Float64=1e-12)
+    isfinite(tol) && tol >= 0 ||
+        throw(ArgumentError("tol must be finite and nonnegative"))
+    _validate_twin_hamiltonian(hamiltonian)
+    left = _twin_left_embedding(hamiltonian)
+    right = _twin_right_embedding(hamiltonian)
+    tt_round(-1im * (left - right), tol)
+end
+
+function _twin_core_local_matrix(system::TwinCoreHEOMTTSystem, replacements...)
+    dimensions = twin_core_heom_dimensions(system)
+    factors = [Matrix{ComplexF64}(I, d, d) for d in dimensions]
+    for (index, factor) in replacements
+        checkbounds(Bool, factors, index) ||
+            throw(ArgumentError("twin-core local replacement $index is out of range"))
+        size(factor) == size(factors[index]) || throw(DimensionMismatch(
+            "twin-core replacement $index has size $(size(factor)); expected $(size(factors[index]))",
+        ))
+        factors[index] = ComplexF64.(factor)
+    end
+    tt_mkron(factors)
+end
+
+function _extend_twin_liouvillian(system::TwinCoreHEOMTTSystem; tol::Float64)
+    physical = build_twin_liouvillian(system.hamiltonian; tol)
+    cores = [copy(core) for core in physical.cores]
+    for dimension in system.hierarchy_sizes
+        identity_matrix = Matrix{ComplexF64}(I, dimension, dimension)
+        push!(cores, reshape(identity_matrix, 1, dimension, dimension, 1))
+    end
+    TTMatrix(cores)
+end
+
+function build_twin_heom_generator(system::TwinCoreHEOMTTSystem;
+                                   tol::Float64=1e-12)
+    isfinite(tol) && tol >= 0 ||
+        throw(ArgumentError("tol must be finite and nonnegative"))
+    generator = _extend_twin_liouvillian(system; tol)
+    hierarchy_index = 0
+    physical_core_count = 2 * length(system.hilbert_dimensions)
+    for coupling in system.couplings
+        ket_core = 2 * coupling.subsystem - 1
+        bra_core = 2 * coupling.subsystem
+        correlation = coupling.correlation
+        for pole in eachindex(correlation.rates)
+            hierarchy_index += 1
+            hierarchy_core = physical_core_count + hierarchy_index
+            dimension = system.hierarchy_sizes[hierarchy_index]
+            number = diagm(0 => ComplexF64.(0:(dimension - 1)))
+            lower = diagm(1 => sqrt.(ComplexF64.(1:(dimension - 1))))
+            raise = diagm(-1 => sqrt.(ComplexF64.(1:(dimension - 1))))
+            V = coupling.operator
+            decay = _twin_core_local_matrix(system, hierarchy_core => number)
+            upward = _twin_core_local_matrix(system, ket_core => V, hierarchy_core => lower) -
+                     _twin_core_local_matrix(system, bra_core => transpose(V), hierarchy_core => lower)
+            downward = correlation.coeff_forward[pole] *
+                       _twin_core_local_matrix(system, ket_core => V, hierarchy_core => raise) -
+                       correlation.coeff_backward[pole] *
+                       _twin_core_local_matrix(system, bra_core => transpose(V), hierarchy_core => raise)
+            generator -= correlation.rates[pole] * decay
+            generator -= 1im * correlation.scales[pole] * upward
+            generator -= 1im / correlation.scales[pole] * downward
+            generator = tt_round(generator, tol)
+        end
+    end
+    tt_round(generator, tol)
+end

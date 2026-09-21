@@ -55,7 +55,15 @@ export PhysicalQuantity,
        TwinCoreBathCoupling,
        TwinCoreHEOMTTSystem,
        twin_core_physical_dimensions,
-       twin_core_heom_dimensions
+       twin_core_heom_dimensions,
+       build_twin_liouvillian,
+       build_twin_heom_generator,
+       build_twin_heom_initial_state,
+       root_twin_state,
+       build_twin_observable,
+       build_twin_trace_observable,
+       build_twin_local_observable,
+       twin_expectation
 
 include("types.jl")
 include("tt_states.jl")
@@ -64,6 +72,7 @@ include("tfd.jl")
 include("heom.jl")
 include("multicore_heom.jl")
 include("twin_core_heom.jl")
+include("twin_core_states.jl")
 include("tt_io.jl")
 
 end
