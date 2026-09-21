@@ -2,6 +2,7 @@ using LinearAlgebra
 using Test
 using TTSolver
 using HEOMKit
+include(joinpath(@__DIR__, "multicore_test_utils.jl"))
 
 if !isdefined(@__MODULE__, :TTDynamics)
     include(joinpath(@__DIR__, "..", "src", "TTDynamics.jl"))
@@ -44,13 +45,17 @@ end
         phi_left = subsystem == 1 ? kron(jump, identity2) : kron(identity2, jump)
         right_s = subsystem == 1 ? kron(transpose(s), identity2) : kron(identity2, transpose(s))
         right_phi = subsystem == 1 ? kron(transpose(jump'), identity2) : kron(identity2, transpose(jump'))
-        expected .-= kron(identity2 ⊗ identity2, left)
+        right_product = subsystem == 1 ? kron(transpose(jump' * s), identity2) : kron(identity2, transpose(jump' * s))
+        ket_s = subsystem == 1 ? kron(s, identity2) : kron(identity2, s)
+        expected .-= kron(kron(identity2, identity2), left)
         expected .+= kron(right_s, phi_left)
-        expected .-= kron(transpose(jump' * s), identity2 ⊗ identity2)
-        expected .+= kron(right_phi, s == v1 ? kron(s, identity2) : kron(identity2, s))
+        expected .-= kron(right_product, kron(identity2, identity2))
+        expected .+= kron(right_phi, ket_s)
     end
-    @test tt_full(dissipator) ≈ expected atol=1e-11
+    permutation = twin_permutation([2, 2])
+    expected_interleaved = permutation * expected * permutation'
+    @test tt_full(dissipator) ≈ expected_interleaved atol=1e-11
 
     generator = build_multicore_redfield_generator(system; tol=1e-13)
-    @test tt_full(generator) ≈ tt_full(build_multicore_liouvillian(h; tol=1e-13)) + expected atol=1e-11
+    @test tt_full(generator) ≈ tt_full(build_multicore_liouvillian(h; tol=1e-13)) + expected_interleaved atol=1e-11
 end
