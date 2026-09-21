@@ -43,12 +43,9 @@ export PhysicalQuantity,
        HEOMTTSystem,
        CorrelationFitMetadata,
        ExponentialCorrelation,
-       LocalBathCoupling,
-       MultiCoreHEOMTTSystem,
        heom_tt_dimensions,
        liouville_left,
        liouville_right,
-       multicore_heom_dimensions,
        root_density_matrix,
        build_heom_liouvillian,
        build_initial_state
@@ -58,7 +55,7 @@ include("tt_states.jl")
 include("util.jl")
 include("tfd.jl")
 include("heom.jl")
-include("multicore_heom.jl")
+include("correlation.jl")
 include("tt_io.jl")
 
 end
