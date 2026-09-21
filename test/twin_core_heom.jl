@@ -94,6 +94,17 @@ end
     ordered_system = TwinCoreHEOMTTSystem(H, reverse_order, [2, 3, 4])
     @test getfield.(ordered_system.couplings, :subsystem) == [2, 1]
     @test ordered_system.hierarchy_sizes == [2, 3, 4]
+
+    noise = NoiseExp(BathExp(0.8, ComplexF64(0.25 + 0.04im), V1))
+    legacy_fit = ExponentialCorrelation(ComplexF64.(noise.γ), ComplexF64.(noise.c1),
+                                        ComplexF64.(noise.c2), sqrt.(noise.abs_coeff),
+                                        twin_test_metadata())
+    legacy = HEOMTTSystem(H1, noise, [3])
+    old_generator, _, _ = build_heom_liouvillian(legacy; tol=1e-14)
+    compatible = TwinCoreHEOMTTSystem(tt_matrix(H1),
+        [TwinCoreBathCoupling(1, V1, legacy_fit)], [3])
+    @test tt_full(build_twin_heom_generator(compatible; tol=1e-14)) ≈
+          tt_full(old_generator) atol=1e-11
 end
 
 @testset "twin-core HEOM system validation" begin

@@ -15,11 +15,6 @@ function state_test_correlation()
     ExponentialCorrelation(ComplexF64[0.7], ComplexF64[0.2], ComplexF64[0.2], metadata)
 end
 
-function state_test_correlation()
-    metadata = CorrelationFitMetadata(0, 0, 0, 0, 0.1, (0.0, 1.0), [1.0], 1.0, Inf, 1.0, String[])
-    ExponentialCorrelation(ComplexF64[0.7], ComplexF64[0.2], ComplexF64[0.2], metadata)
-end
-
 @testset "twin-core HEOM initial density states" begin
     H = tt_mkron(ComplexF64[0 1; 1 0], ComplexF64.(Diagonal(0:2)))
     system = TwinCoreHEOMTTSystem(H, TwinCoreBathCoupling[], Int[])
@@ -34,7 +29,7 @@ end
     @test vec(tt_full(state)) ≈ expected_interleaved atol=1e-11
     # `tt_svd` consumes the internal little-endian ordering; convert from the
     # public interleaved (kron-compatible) ordering before decomposing.
-    correlated_input = vec(permutedims(reshape(expected_interleaved, 2, 2, 3, 3), 4:-1:1))
+    correlated_input = vec(permutedims(reshape(expected_interleaved, 3, 3, 2, 2), 4:-1:1))
     correlated = tt_svd(correlated_input, [2, 2, 3, 3]; tol=1e-14)
     rebuilt = build_twin_heom_initial_state(system, correlated; tol=1e-14)
     @test vec(tt_full(rebuilt)) ≈ expected_interleaved atol=1e-11
