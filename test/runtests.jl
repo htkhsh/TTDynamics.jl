@@ -9,6 +9,7 @@ end
 
 include("tt_io.jl")
 include("multicore_heom.jl")
+include("twin_core_heom.jl")
 include("holstein_current_correlation.jl")
 include("heom_twin_space.jl")
 include("lattice_frohlich.jl")

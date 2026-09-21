@@ -51,7 +51,11 @@ export PhysicalQuantity,
        multicore_heom_dimensions,
        root_density_matrix,
        build_heom_liouvillian,
-       build_initial_state
+       build_initial_state,
+       TwinCoreBathCoupling,
+       TwinCoreHEOMTTSystem,
+       twin_core_physical_dimensions,
+       twin_core_heom_dimensions
 
 include("types.jl")
 include("tt_states.jl")
@@ -59,6 +63,7 @@ include("util.jl")
 include("tfd.jl")
 include("heom.jl")
 include("multicore_heom.jl")
+include("twin_core_heom.jl")
 include("tt_io.jl")
 
 end
