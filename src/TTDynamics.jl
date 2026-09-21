@@ -63,7 +63,8 @@ export PhysicalQuantity,
        multicore_expectation,
        MultiCoreRedfieldTTSystem,
        build_multicore_redfield_dissipator,
-       build_multicore_redfield_generator
+       build_multicore_redfield_generator,
+       propagate_multicore_redfield_tamen
 
 include("types.jl")
 include("tt_states.jl")
