@@ -249,6 +249,29 @@ build_initial_state(system::HEOMTTSystem, init_state::Int; tol=1e-12) → TTTens
 Build the twin-space initial density matrix
 `|init_state⟩_ket ⊗ |init_state⟩_bra ⊗ |0,0,...,0⟩`.
 
+### Multi-Subsystem Twin-Core HEOM-TT
+
+The multi-subsystem layout stores one ket core and one bra core for every
+physical subsystem, followed by one hierarchy core per bath pole:
+`[ket₁, bra₁, ket₂, bra₂, …, hierarchy]`. This keeps subsystem dimensions
+explicit while retaining TT compression across the full operator.
+
+```julia
+H = tt_mkron(ComplexF64[0 1; 1 0], ComplexF64.(Diagonal(0:2)))
+correlation = ExponentialCorrelation(rates, forward, backward, metadata)
+coupling = TwinCoreBathCoupling(2, q, correlation)
+system = TwinCoreHEOMTTSystem(H, [coupling], [3])
+
+generator = build_twin_heom_generator(system)
+state = build_twin_heom_initial_state(system, [rho_charge, rho_mode])
+trace_observable = build_twin_trace_observable(system)
+population = twin_expectation(trace_observable, state, system)
+```
+
+Use `build_twin_liouvillian` for a closed system, `root_twin_state` to contract
+hierarchy indices to the physical twin space, and `root_density_matrix` for a
+dense matrix (with its `max_dimension` guard).
+
 ### Utilities (util.jl)
 
 #### `franck_condon_factors`
