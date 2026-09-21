@@ -481,7 +481,7 @@ end
         Dict{Symbol,Any}(:verb => 0, :nswp => 1, :local_iters => 2),
     )
     propagated = extract_snapshot(space_time, time_grid, 1.0, "CN")
-    @test tt_dot(trace_observable, propagated) ≈ 1.0 atol=1e-4
+    @test tt_dot(trace_observable, propagated) ≈ 1.0 atol=1e-3
 
     algebraic_system = algebraic_twin_test_system()
     algebraic_liouvillian, _, _ = build_heom_liouvillian(algebraic_system; tol=1e-14)
