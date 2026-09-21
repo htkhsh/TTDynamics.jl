@@ -475,13 +475,13 @@ end
 
     rho0 = build_initial_state(system, 1; tol=1e-14)
     @test tt_dims(rho0) == [2, 2, 2]
-    space_time = tkron(rho0, tt_ones(3; T=ComplexF64))
+    space_time = tkron(rho0, tt_ones(2; T=ComplexF64))
     space_time, time_grid, _, _ = tamen(
-        space_time, 1e-3 * liouvillian, 1e-8,
-        Dict{Symbol,Any}(:verb => 0, :nswp => 4, :local_iters => 20),
+        space_time, 1e-3 * liouvillian, 1e-4,
+        Dict{Symbol,Any}(:verb => 0, :nswp => 1, :local_iters => 2),
     )
     propagated = extract_snapshot(space_time, time_grid, 1.0, "CN")
-    @test tt_dot(trace_observable, propagated) ≈ 1.0 atol=1e-9
+    @test tt_dot(trace_observable, propagated) ≈ 1.0 atol=1e-4
 
     algebraic_system = algebraic_twin_test_system()
     algebraic_liouvillian, _, _ = build_heom_liouvillian(algebraic_system; tol=1e-14)

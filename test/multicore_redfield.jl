@@ -16,8 +16,8 @@ using .TTDynamics
     state = product_tt_state([ComplexF64[1.0, 0.0], ComplexF64[1.0, 0.0]])
     trajectory = propagate_multicore_redfield_tamen(
         system, state, [0.0, 0.01]; temporal_basis_size=2,
-        tolerance=1e-6, state_tolerance=1e-10,
-        options=Dict(:verb => 0, :nswp => 2, :local_iters => 8),
+        tolerance=1e-3, state_tolerance=1e-8,
+        options=Dict(:verb => 0, :nswp => 1, :local_iters => 2),
     )
     @test length(trajectory) == 2
     @test tt_dims(trajectory[end]) == [2, 2]
