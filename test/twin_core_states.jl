@@ -35,7 +35,7 @@ end
     @test_throws ArgumentError build_twin_heom_initial_state(system, [rho1])
     @test_throws DimensionMismatch build_twin_heom_initial_state(system, [rho1, Matrix{ComplexF64}(I, 2, 2) / 2])
     @test_throws ArgumentError build_twin_heom_initial_state(system, [rho1, ComplexF64[1.1 0 0; 0 -0.1 0; 0 0 0]], density_tolerance=1e-12)
-    @test_throws ArgumentError build_twin_heom_initial_state(system, [rho1, rho2]; density_tolerance=-1)
+    @test_throws ArgumentError build_twin_heom_initial_state(system, [rho1, rho2]; density_tolerance=-1.0)
     open_system = TwinCoreHEOMTTSystem(H, [TwinCoreBathCoupling(1, Matrix{ComplexF64}(I, 2, 2), state_test_correlation())], [2])
     open_state = build_twin_heom_initial_state(open_system, [rho1, rho2])
     @test tt_dims(open_state) == [2, 2, 3, 3, 2]

@@ -56,6 +56,44 @@ end
     closed = TwinCoreHEOMTTSystem(tt_matrix(H1), TwinCoreBathCoupling[], Int[])
     @test tt_full(build_twin_heom_generator(closed; tol=1e-14)) ≈
           tt_full(build_twin_liouvillian(closed.hamiltonian; tol=1e-14)) atol=1e-11
+
+    H2 = ComplexF64[0.0 0.2 0.0; 0.2 0.4 0.1; 0.0 0.1 0.7]
+    H = tt_mkron(H1, H2)
+    V2 = ComplexF64[0 1 0; 1 0 0; 0 0 -0.5]
+    fit2 = twin_test_correlation(rates=ComplexF64[0.6 + 0.2im],
+                                 forward=ComplexF64[0.3 - 0.1im],
+                                 backward=ComplexF64[-0.04 + 0.2im])
+    system2 = TwinCoreHEOMTTSystem(H, [TwinCoreBathCoupling(2, V2, fit2)], [2])
+    generator2 = build_twin_heom_generator(system2; tol=1e-14)
+    dimensions = [2, 2, 3, 3, 2]
+    hierarchy_core, ket_core, bra_core = 5, 3, 4
+    number = ComplexF64[0 0; 0 1]
+    lower = ComplexF64[0 1; 0 0]
+    raise = ComplexF64[0 0; 1 0]
+    local_product(replacements...) = begin
+        factors = [Matrix{ComplexF64}(I, d, d) for d in dimensions]
+        for (index, matrix) in replacements
+            factors[index] = ComplexF64.(matrix)
+        end
+        tt_full(tt_mkron(factors))
+    end
+    physical = build_twin_liouvillian(H; tol=1e-14)
+    rate, scale = only(fit2.rates), only(fit2.scales)
+    expected = kron(tt_full(physical), Matrix{ComplexF64}(I, 2, 2))
+    expected -= rate * local_product(hierarchy_core => number)
+    expected -= 1im * scale * (local_product(ket_core => V2, hierarchy_core => lower) -
+                               local_product(bra_core => transpose(V2), hierarchy_core => lower))
+    expected -= 1im / scale * (only(fit2.coeff_forward) * local_product(ket_core => V2, hierarchy_core => raise) -
+                               only(fit2.coeff_backward) * local_product(bra_core => transpose(V2), hierarchy_core => raise))
+    @test tt_full(generator2) ≈ expected atol=1e-10
+
+    two_pole_fit = twin_test_correlation(rates=ComplexF64[0.4, 0.9],
+                                         forward=ComplexF64[0.2, 0.05], backward=ComplexF64[0.18, 0.04])
+    reverse_order = [TwinCoreBathCoupling(2, Matrix{ComplexF64}(I, 3, 3), two_pole_fit),
+                     TwinCoreBathCoupling(1, Matrix{ComplexF64}(I, 2, 2), fit)]
+    ordered_system = TwinCoreHEOMTTSystem(H, reverse_order, [2, 3, 4])
+    @test getfield.(ordered_system.couplings, :subsystem) == [2, 1]
+    @test ordered_system.hierarchy_sizes == [2, 3, 4]
 end
 
 @testset "twin-core HEOM system validation" begin
