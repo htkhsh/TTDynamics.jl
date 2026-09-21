@@ -68,3 +68,9 @@ function _validate_local_operator(operator::AbstractMatrix)
 end
 
 _complex_tt_matrix(matrix::TTMatrix) = TTMatrix([ComplexF64.(core) for core in matrix.cores])
+
+liouville_left(operator::AbstractMatrix) =
+    kron(Matrix{ComplexF64}(I, size(operator, 1), size(operator, 1)), operator)
+
+liouville_right(operator::AbstractMatrix) =
+    kron(transpose(operator), Matrix{ComplexF64}(I, size(operator, 1), size(operator, 1)))
