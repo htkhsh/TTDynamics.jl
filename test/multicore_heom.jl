@@ -1,248 +1,153 @@
 using LinearAlgebra
 using Test
 using TTSolver
+using HEOMKit
+include(joinpath(@__DIR__, "multicore_test_utils.jl"))
 
 if !isdefined(@__MODULE__, :TTDynamics)
     include(joinpath(@__DIR__, "..", "src", "TTDynamics.jl"))
 end
+
 using .TTDynamics
 
-@testset "scaled multi-core HEOM component equation" begin
-    metadata = CorrelationFitMetadata(
-        0,
-        0,
-        0,
-        0,
-        0.1,
-        (0.0, 1.0),
-        [1.0],
-        1.0,
-        Inf,
-        1.0,
-        String[],
+function twin_test_metadata()
+    CorrelationFitMetadata(
+        0, 0, 0, 0, 0.1, (0.0, 1.0), [1.0], 1.0, Inf, 1.0, String[],
     )
-    rate = 0.7 + 0.2im
-    forward = 0.31 - 0.17im
-    backward = -0.08 + 0.23im
-    fit = ExponentialCorrelation([rate], [forward], [backward], metadata)
-    scale = only(fit.scales)
-    V = ComplexF64[0.4 0.7im; -0.2 1.1]
+end
+
+function twin_test_correlation(; rates=ComplexF64[0.7 + 0.1im],
+                               forward=ComplexF64[0.2 - 0.03im],
+                               backward=ComplexF64[0.15 + 0.04im])
+    ExponentialCorrelation(rates, forward, backward, twin_test_metadata())
+end
+
+@testset "Hamiltonian MPO twin embedding" begin
+    sx = ComplexF64[0 1; 1 0]
+    sz = ComplexF64[1 0; 0 -1]
+    q3 = ComplexF64[0 1 0; 1 0 sqrt(2); 0 sqrt(2) 0]
+    n3 = ComplexF64.(Diagonal(0:2))
     I2 = Matrix{ComplexF64}(I, 2, 2)
-    VL = kron(I2, V)
-    VR = kron(transpose(V), I2)
-    physical_L = ComplexF64[
-        -0.3+0.1im 0.2im 0.0 0.4
-        0.1 -0.5-0.2im -0.3im 0.0
-        0.0 0.7 0.2+0.4im -0.1im
-        -0.2im 0.0 0.6 -0.8
-    ]
-    physical_L_tt = TTMatrix([reshape(physical_L, 1, 4, 4, 1)])
-    system = MultiCoreHEOMTTSystem(
-        physical_L_tt,
-        [4],
-        [LocalBathCoupling(1, V, fit)],
-        [3],
-    )
+    I3 = Matrix{ComplexF64}(I, 3, 3)
+    H = 0.3 * tt_mkron(sz, I3) + 0.7 * tt_mkron(I2, n3) + 0.2 * tt_mkron(sx, q3)
+    before = deepcopy(H.cores)
+    L = build_twin_liouvillian(H; tol=1e-14)
+    @test tt_dims(L) == ([2, 2, 3, 3], [2, 2, 3, 3])
+    @test H.cores == before
+    H_dense = tt_full(H)
+    dimension = size(H_dense, 1)
+    identity_full = Matrix{ComplexF64}(I, dimension, dimension)
+    vectorized = -1im * (kron(identity_full, H_dense) - kron(transpose(H_dense), identity_full))
+    P = twin_permutation([2, 3])
+    @test tt_full(L) ≈ P * vectorized * P' atol=1e-11
+    @test_throws ArgumentError build_twin_liouvillian(H; tol=-1.0)
+    @test_throws ArgumentError build_twin_liouvillian(H; tol=NaN)
+    nonfinite = TTMatrix([fill(ComplexF64(NaN), 1, 2, 2, 1)])
+    @test_throws ArgumentError build_twin_liouvillian(nonfinite)
+end
 
-    expected = zeros(ComplexF64, 12, 12)
-    I4 = Matrix{ComplexF64}(I, 4, 4)
-    for n in 0:2
-        nblock = (n + 1):3:12
-        expected[nblock, nblock] .+= physical_L - n * rate * I4
-        if n < 2
-            upblock = (n + 2):3:12
-            expected[nblock, upblock] .+=
-                -1im * scale * sqrt(n + 1) * (VL - VR)
+@testset "scaled multicore HEOM generator" begin
+    H1 = ComplexF64[0.2 0.3; 0.3 -0.1]
+    V1 = ComplexF64[1 0; 0 -1]
+    fit = twin_test_correlation(rates=ComplexF64[0.8], forward=ComplexF64[0.25 + 0.04im], backward=ComplexF64[0.15 + 0.02im])
+    system = MultiCoreHEOMTTSystem(tt_matrix(H1), [MultiCoreBathCoupling(1, V1, fit)], [3])
+    generator = build_twin_heom_generator(system; tol=1e-14)
+    @test tt_dims(generator) == ([2, 2, 3], [2, 2, 3])
+    closed = MultiCoreHEOMTTSystem(tt_matrix(H1), MultiCoreBathCoupling[], Int[])
+    @test tt_full(build_twin_heom_generator(closed; tol=1e-14)) ≈
+          tt_full(build_twin_liouvillian(closed.hamiltonian; tol=1e-14)) atol=1e-11
+
+    H2 = ComplexF64[0.0 0.2 0.0; 0.2 0.4 0.1; 0.0 0.1 0.7]
+    H = tt_mkron(H1, H2)
+    V2 = ComplexF64[0 1 0; 1 0 0; 0 0 -0.5]
+    fit2 = twin_test_correlation(rates=ComplexF64[0.6 + 0.2im],
+                                 forward=ComplexF64[0.3 - 0.1im],
+                                 backward=ComplexF64[-0.04 + 0.2im])
+    system2 = MultiCoreHEOMTTSystem(H, [MultiCoreBathCoupling(2, V2, fit2)], [2])
+    generator2 = build_twin_heom_generator(system2; tol=1e-14)
+    dimensions = [2, 2, 3, 3, 2]
+    hierarchy_core, ket_core, bra_core = 5, 3, 4
+    number = ComplexF64[0 0; 0 1]
+    lower = ComplexF64[0 1; 0 0]
+    raise = ComplexF64[0 0; 1 0]
+    local_product(replacements...) = begin
+        factors = [Matrix{ComplexF64}(I, d, d) for d in dimensions]
+        for (index, matrix) in replacements
+            factors[index] = ComplexF64.(matrix)
         end
-        if n > 0
-            downblock = n:3:12
-            expected[nblock, downblock] .+=
-                -1im * sqrt(n) / scale * (forward * VL - backward * VR)
-        end
+        tt_full(tt_mkron(factors))
     end
+    physical = build_twin_liouvillian(H; tol=1e-14)
+    rate, scale = only(fit2.rates), only(fit2.scales)
+    expected = kron(tt_full(physical), Matrix{ComplexF64}(I, 2, 2))
+    expected -= rate * local_product(hierarchy_core => number)
+    expected -= 1im * scale * (local_product(ket_core => V2, hierarchy_core => lower) -
+                               local_product(bra_core => transpose(V2), hierarchy_core => lower))
+    expected -= 1im / scale * (only(fit2.coeff_forward) * local_product(ket_core => V2, hierarchy_core => raise) -
+                               only(fit2.coeff_backward) * local_product(bra_core => transpose(V2), hierarchy_core => raise))
+    @test tt_full(generator2) ≈ expected atol=1e-10
 
-    density = vec(ComplexF64[0.6 0.2+0.1im; -0.3im 0.4])
-    probe = kron(density, ComplexF64[0.2, -0.5im, 0.7])
-    dense_generator = tt_full(build_multicore_heom_generator(system))
-    @test dense_generator ≈ expected atol=1e-11
-    @test dense_generator * probe ≈ expected * probe atol=1e-11
+    two_pole_fit = twin_test_correlation(rates=ComplexF64[0.4, 0.9],
+                                         forward=ComplexF64[0.2, 0.05], backward=ComplexF64[0.18, 0.04])
+    reverse_order = [MultiCoreBathCoupling(2, Matrix{ComplexF64}(I, 3, 3), two_pole_fit),
+                     MultiCoreBathCoupling(1, Matrix{ComplexF64}(I, 2, 2), fit)]
+    ordered_system = MultiCoreHEOMTTSystem(H, reverse_order, [2, 3, 4])
+    @test getfield.(ordered_system.couplings, :subsystem) == [2, 1]
+    @test ordered_system.hierarchy_sizes == [2, 3, 4]
+
+    noise = NoiseExp(BathExp(0.8, ComplexF64(0.25 + 0.04im), V1))
+    legacy_fit = ExponentialCorrelation(ComplexF64.(noise.γ), ComplexF64.(noise.c1),
+                                        ComplexF64.(noise.c2), sqrt.(noise.abs_coeff),
+                                        twin_test_metadata())
+    legacy = HEOMTTSystem(H1, noise, [3])
+    old_generator, _, _ = build_heom_liouvillian(legacy; tol=1e-14)
+    compatible = MultiCoreHEOMTTSystem(tt_matrix(H1),
+        [MultiCoreBathCoupling(1, V1, legacy_fit)], [3])
+    @test tt_full(build_twin_heom_generator(compatible; tol=1e-14)) ≈
+          tt_full(old_generator) atol=1e-11
 end
 
-@testset "multi-core HEOM vacuum state and root contractions" begin
-    metadata = CorrelationFitMetadata(
-        0,
-        0,
-        0,
-        0,
-        0.1,
-        (0.0, 1.0),
-        [1.0, 0.5],
-        1.0,
-        Inf,
-        1.0,
-        String[],
-    )
-    fit = ExponentialCorrelation(
-        [0.4 + 0.1im, 0.9 - 0.2im],
-        [0.2 + 0.05im, -0.03 + 0.07im],
-        [0.18 - 0.02im, 0.04 + 0.06im],
-        metadata,
-    )
-    physical_L = TTMatrix([
-        reshape(ComplexF64.(diagm(0 => [0.0, -0.1, -0.2, -0.3])), 1, 4, 4, 1),
-        reshape(ComplexF64.(diagm(0 => collect(0.0:-0.05:-0.4))), 1, 9, 9, 1),
-    ])
-    coupling = LocalBathCoupling(
-        2,
-        ComplexF64[0.5 0.1im 0.0; -0.1im -0.2 0.3; 0.0 0.3 0.7],
-        fit,
-    )
-    system = MultiCoreHEOMTTSystem(physical_L, [4, 9], [coupling], [2, 3])
+@testset "multicore HEOM system validation" begin
+    H1 = ComplexF64[0.2 0.4; 0.4 -0.1]
+    H2 = ComplexF64[0.0 0.1 0.0; 0.1 0.3 0.2; 0.0 0.2 0.5]
+    H = tt_mkron(H1, H2)
+    fit = twin_test_correlation()
+    coupling = MultiCoreBathCoupling(2, Diagonal(ComplexF64[1, 0, -1]), fit)
+    system = MultiCoreHEOMTTSystem(H, [coupling], [4])
 
-    physical_before = deepcopy(physical_L.cores)
-    rates_before = copy(fit.rates)
-    forward_before = copy(fit.coeff_forward)
-    backward_before = copy(fit.coeff_backward)
-    scales_before = copy(fit.scales)
-    generator = build_multicore_heom_generator(system)
-    @test tt_dims(generator) == ([4, 9, 2, 3], [4, 9, 2, 3])
-    @test physical_L.cores == physical_before
-    @test fit.rates == rates_before
-    @test fit.coeff_forward == forward_before
-    @test fit.coeff_backward == backward_before
-    @test fit.scales == scales_before
+    @test system.hilbert_dimensions == [2, 3]
+    @test multicore_physical_dimensions(system) == [2, 2, 3, 3]
+    @test multicore_heom_dimensions(system) == [2, 2, 3, 3, 4]
+    @test MultiCoreHEOMTTSystem(H, [coupling], 5).hierarchy_sizes == [5]
 
-    rho1 = ComplexF64[0.7 0.1im; -0.1im 0.3]
-    rho2 = ComplexF64[0.2 0.0 0.0; 0.0 0.5 0.1im; 0.0 -0.1im 0.3]
-    initial = build_multicore_heom_initial_state(system, [rho1, rho2])
-    root = root_ado(initial, system)
-    trace_observable = TTTensor([
-        reshape(vec(Matrix{ComplexF64}(I, 2, 2)), 1, 4, 1),
-        reshape(vec(Matrix{ComplexF64}(I, 3, 3)), 1, 9, 1),
-    ])
-    local_observable = TTTensor([
-        reshape(vec(ComplexF64[1 0; 0 0]), 1, 4, 1),
-        reshape(vec(Matrix{ComplexF64}(I, 3, 3)), 1, 9, 1),
-    ])
-    @test tt_dims(initial) == [4, 9, 2, 3]
-    @test tt_dims(root) == [4, 9]
-    @test tt_dot(trace_observable, root) ≈ 1
-    @test root_expectation(initial, system, trace_observable) ≈ 1
-    @test root_expectation(initial, system, local_observable) ≈ rho1[1, 1]
+    closed = MultiCoreHEOMTTSystem(H, MultiCoreBathCoupling[], Int[])
+    @test multicore_heom_dimensions(closed) == [2, 2, 3, 3]
 
-    closed_system = MultiCoreHEOMTTSystem(
-        physical_L,
-        [4, 9],
-        LocalBathCoupling[],
-        Int[],
+    @test_throws ArgumentError MultiCoreBathCoupling(
+        0, Matrix{ComplexF64}(I, 2, 2), fit,
     )
-    closed_generator = build_multicore_heom_generator(closed_system)
-    closed_initial = build_multicore_heom_initial_state(closed_system, [rho1, rho2])
-    @test tt_dims(closed_generator) == ([4, 9], [4, 9])
-    @test tt_full(closed_generator) ≈ tt_full(physical_L) atol=1e-11
-    @test tt_dims(root_ado(closed_initial, closed_system)) == [4, 9]
-    @test root_expectation(closed_initial, closed_system, trace_observable) ≈ 1
-end
-
-@testset "multi-core HEOM types" begin
-    A = ComplexF64[1 2im; 3 4]
-    rho = ComplexF64[0.4 0.1im; -0.1im 0.6]
-    @test liouville_left(A) * vec(rho) ≈ vec(A * rho)
-    @test liouville_right(A) * vec(rho) ≈ vec(rho * A)
-
-    metadata = CorrelationFitMetadata(
-        0,
-        0,
-        0,
-        0,
-        0.1,
-        (0.0, 1.0),
-        [1.0],
-        1.0,
-        Inf,
-        1.0,
-        String[],
+    @test_throws ArgumentError MultiCoreBathCoupling(
+        1, ComplexF64[0 1; 0 0], fit,
     )
-    fit = ExponentialCorrelation([1 + 0im], [0.2 + 0.1im], [0.2 - 0.1im], metadata)
-    @test fit.scales ≈ [sqrt(abs(0.2 + 0.1im))]
-    @test_throws ArgumentError ExponentialCorrelation(
-        [-1 + 0im],
-        [1im],
-        [-1im],
-        metadata,
-    )
-    @test_throws ArgumentError ExponentialCorrelation(
-        ComplexF64[-1 + 0im],
-        ComplexF64[1im],
-        ComplexF64[-1im],
-        [1.0],
-        metadata,
-    )
-end
-
-@testset "multi-core HEOM dimensions and validation" begin
-    metadata = CorrelationFitMetadata(
-        0,
-        0,
-        0,
-        0,
-        0.1,
-        (0.0, 1.0),
-        [1.0],
-        1.0,
-        Inf,
-        1.0,
-        String[],
-    )
-    fit = ExponentialCorrelation(
-        [1 + 0im, 2 + 0im],
-        [0.2 + 0.1im, 0.05 + 0.02im],
-        [0.2 - 0.1im, 0.05 - 0.02im],
-        metadata,
-    )
-    physical_L = TTMatrix([
-        reshape(Matrix{ComplexF64}(I, 4, 4), 1, 4, 4, 1),
-        reshape(Matrix{ComplexF64}(I, 9, 9), 1, 9, 9, 1),
-    ])
-    couplings = [LocalBathCoupling(2, Matrix{ComplexF64}(I, 3, 3), fit)]
-    system = MultiCoreHEOMTTSystem(physical_L, [4, 9], couplings, [3, 3])
-
-    @test multicore_heom_dimensions(system) == [4, 9, 3, 3]
-    @test_throws ArgumentError LocalBathCoupling(0, Matrix{ComplexF64}(I, 3, 3), fit)
     @test_throws ArgumentError MultiCoreHEOMTTSystem(
-        physical_L,
-        [4, 9],
-        [LocalBathCoupling(3, Matrix{ComplexF64}(I, 3, 3), fit)],
-        [3, 3],
+        H, [MultiCoreBathCoupling(3, Matrix{ComplexF64}(I, 2, 2), fit)], [3],
     )
-    @test_throws ArgumentError MultiCoreHEOMTTSystem(physical_L, [4, 9], couplings, [0])
-
-    same_core_couplings = [
-        LocalBathCoupling(1, Matrix{ComplexF64}(I, 2, 2), fit),
-        LocalBathCoupling(1, 2 .* Matrix{ComplexF64}(I, 2, 2), fit),
-    ]
-    same_core_system = MultiCoreHEOMTTSystem(
-        physical_L,
-        [4, 9],
-        same_core_couplings,
-        fill(3, 4),
+    @test_throws DimensionMismatch MultiCoreHEOMTTSystem(
+        H, [MultiCoreBathCoupling(2, Matrix{ComplexF64}(I, 2, 2), fit)], [3],
     )
-    @test same_core_system.couplings[1].operator == Matrix{ComplexF64}(I, 2, 2)
-    @test same_core_system.couplings[2].operator == 2 .* Matrix{ComplexF64}(I, 2, 2)
+    @test_throws ArgumentError MultiCoreHEOMTTSystem(H, [coupling], Int[])
+    @test_throws ArgumentError MultiCoreHEOMTTSystem(H, [coupling], [0])
 
-    reversed_couplings = [
-        LocalBathCoupling(2, Matrix{ComplexF64}(I, 3, 3), fit),
-        LocalBathCoupling(1, Matrix{ComplexF64}(I, 2, 2), fit),
-    ]
+    nonsquare = TTMatrix([ones(ComplexF64, 1, 2, 3, 1)])
+    @test_throws DimensionMismatch MultiCoreHEOMTTSystem(
+        nonsquare, MultiCoreBathCoupling[], Int[],
+    )
+    bad_boundary = TTMatrix([ones(ComplexF64, 2, 2, 2, 1)])
     @test_throws ArgumentError MultiCoreHEOMTTSystem(
-        physical_L,
-        [4, 9],
-        reversed_couplings,
-        fill(3, 4),
+        bad_boundary, MultiCoreBathCoupling[], Int[],
     )
-
-    closed_system = MultiCoreHEOMTTSystem(physical_L, [4, 9], LocalBathCoupling[], Int[])
-    @test multicore_heom_dimensions(closed_system) == [4, 9]
-    @test isempty(closed_system.couplings)
-    @test isempty(closed_system.hierarchy_sizes)
+    nonfinite = TTMatrix([fill(ComplexF64(NaN), 1, 2, 2, 1)])
+    @test_throws ArgumentError MultiCoreHEOMTTSystem(
+        nonfinite, MultiCoreBathCoupling[], Int[],
+    )
 end

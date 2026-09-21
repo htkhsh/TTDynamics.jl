@@ -9,20 +9,8 @@ end
 
 include("tt_io.jl")
 include("multicore_heom.jl")
-include("twin_core_heom.jl")
-include("twin_core_states.jl")
-include("holstein_current_correlation.jl")
+include("multicore_states.jl")
 include("heom_twin_space.jl")
-include("lattice_frohlich.jl")
-include("lattice_frohlich_current_correlation.jl")
-include("holstein_simple.jl")
-include("quartic.jl")
-
-include("../examples/tfd/ksl/utils.jl")
-include("../examples/holstein/config.jl")
-include("../examples/holstein/model.jl")
-include("../examples/holstein/dynamics.jl")
-include("../examples/holstein/plotting.jl")
 
 @testset "Holstein-family examples are self-contained" begin
     roots = [

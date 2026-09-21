@@ -12,7 +12,7 @@ function _validate_density_matrix(density, dimension, index, tolerance)
         throw(ArgumentError("local density $index must be positive semidefinite"))
 end
 
-function _matrix_to_twin_cores(matrix::AbstractMatrix; relative_tolerance::Float64)
+function _matrix_to_multicores(matrix::AbstractMatrix; relative_tolerance::Float64)
     decomposition = svd(ComplexF64.(matrix))
     cutoff = relative_tolerance * maximum(decomposition.S)
     bond_rank = max(count(>(cutoff), decomposition.S), 1)
@@ -28,7 +28,7 @@ function _hierarchy_vacuum_cores(hierarchy_sizes)
 end
 
 function build_twin_heom_initial_state(
-    system::TwinCoreHEOMTTSystem,
+    system::MultiCoreHEOMTTSystem,
     local_density_matrices;
     tol::Float64=1e-12,
     density_tolerance::Float64=1e-10,
@@ -41,7 +41,7 @@ function build_twin_heom_initial_state(
     cores = Array{ComplexF64,3}[]
     for (index, (density, dimension)) in enumerate(zip(local_density_matrices, system.hilbert_dimensions))
         _validate_density_matrix(density, dimension, index, density_tolerance)
-        ket, bra = _matrix_to_twin_cores(density; relative_tolerance=density_tolerance)
+        ket, bra = _matrix_to_multicores(density; relative_tolerance=density_tolerance)
         push!(cores, ket, bra)
     end
     append!(cores, _hierarchy_vacuum_cores(system.hierarchy_sizes))
@@ -49,14 +49,14 @@ function build_twin_heom_initial_state(
 end
 
 
-function _validate_twin_heom_state(state::TTTensor, system::TwinCoreHEOMTTSystem)
-    expected = twin_core_heom_dimensions(system)
+function _validate_twin_heom_state(state::TTTensor, system::MultiCoreHEOMTTSystem)
+    expected = multicore_heom_dimensions(system)
     tt_dims(state) == expected || throw(DimensionMismatch(
-        "twin-core HEOM state dimensions must be $expected; got $(tt_dims(state))",
+        "multicore HEOM state dimensions must be $expected; got $(tt_dims(state))",
     ))
 end
 
-function root_twin_state(state::TTTensor, system::TwinCoreHEOMTTSystem)::TTTensor
+function root_twin_state(state::TTTensor, system::MultiCoreHEOMTTSystem)::TTTensor
     _validate_twin_heom_state(state, system)
     physical_count = 2 * length(system.hilbert_dimensions)
     environment = ones(ComplexF64, 1)
@@ -79,19 +79,19 @@ function build_twin_observable(local_operators; tol::Float64=1e-12)
         operator isa AbstractMatrix || throw(ArgumentError("local observable $index must be a matrix"))
         size(operator, 1) == size(operator, 2) || throw(DimensionMismatch("local observable $index must be square"))
         all(isfinite, operator) || throw(ArgumentError("local observable $index must be finite"))
-        ket, bra = _matrix_to_twin_cores(adjoint(operator); relative_tolerance=tol)
+        ket, bra = _matrix_to_multicores(adjoint(operator); relative_tolerance=tol)
         push!(cores, ket, bra)
     end
     tt_round(TTTensor(cores), tol)
 end
 
-function build_twin_trace_observable(system::TwinCoreHEOMTTSystem; tol::Float64=1e-12)
+function build_twin_trace_observable(system::MultiCoreHEOMTTSystem; tol::Float64=1e-12)
     isfinite(tol) && tol >= 0 || throw(ArgumentError("tol must be finite and nonnegative"))
     identities = [Matrix{ComplexF64}(I, d, d) for d in system.hilbert_dimensions]
     build_twin_observable(identities; tol)
 end
 
-function build_twin_local_observable(system::TwinCoreHEOMTTSystem,
+function build_twin_local_observable(system::MultiCoreHEOMTTSystem,
                                      subsystem::Integer,
                                      operator::AbstractMatrix;
                                      tol::Float64=1e-12)
@@ -108,8 +108,8 @@ function build_twin_local_observable(system::TwinCoreHEOMTTSystem,
 end
 
 function twin_expectation(observable::TTTensor, state::TTTensor,
-                          system::TwinCoreHEOMTTSystem)
-    expected = twin_core_physical_dimensions(system)
+                          system::MultiCoreHEOMTTSystem)
+    expected = multicore_physical_dimensions(system)
     tt_dims(observable) == expected || throw(DimensionMismatch(
         "twin observable dimensions must be $expected; got $(tt_dims(observable))",
     ))
@@ -136,12 +136,12 @@ function _kron_linear_index(indices, dimensions)
     index
 end
 
-function root_density_matrix(state::TTTensor, system::TwinCoreHEOMTTSystem;
+function root_density_matrix(state::TTTensor, system::MultiCoreHEOMTTSystem;
                              max_dimension::Integer=2_000)
     dimensions = system.hilbert_dimensions
     total = _bounded_hilbert_dimension(dimensions, Int(max_dimension))
     root_values = vec(tt_full(root_twin_state(state, system)))
-    twin_dimensions = twin_core_physical_dimensions(system)
+    twin_dimensions = multicore_physical_dimensions(system)
     density = zeros(ComplexF64, total, total)
     for ket in Iterators.product((Base.OneTo(d) for d in dimensions)...)
         for bra in Iterators.product((Base.OneTo(d) for d in dimensions)...)
@@ -159,12 +159,12 @@ function root_density_matrix(state::TTTensor, system::TwinCoreHEOMTTSystem;
 end
 
 function build_twin_heom_initial_state(
-    system::TwinCoreHEOMTTSystem,
+    system::MultiCoreHEOMTTSystem,
     physical_state::TTTensor;
     tol::Float64=1e-12,
 )
     isfinite(tol) && tol >= 0 || throw(ArgumentError("tol must be finite and nonnegative"))
-    expected = twin_core_physical_dimensions(system)
+    expected = multicore_physical_dimensions(system)
     tt_dims(physical_state) == expected || throw(DimensionMismatch(
         "physical twin state dimensions must be $expected; got $(tt_dims(physical_state))",
     ))
