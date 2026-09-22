@@ -17,7 +17,8 @@ function _propagate_tamen_trajectory(generator, state, times;
                                      options,
                                      conserved_observables,
                                      preserve_trace,
-                                     trace_observable)
+                                     trace_observable,
+                                     callback)
     temporal_basis_size >= 2 || throw(ArgumentError("temporal_basis_size must be at least two"))
     isfinite(tolerance) && tolerance > 0 || throw(ArgumentError("tolerance must be finite and positive"))
     isfinite(state_tolerance) && state_tolerance >= 0 || throw(ArgumentError("state_tolerance must be finite and nonnegative"))
@@ -44,6 +45,7 @@ function _propagate_tamen_trajectory(generator, state, times;
     end
     trajectory = TTTensor[state]
     current = state
+    callback !== nothing && callback(0, time_grid[1], current)
     for interval in 2:length(time_grid)
         Δt = time_grid[interval] - time_grid[interval - 1]
         Δt == 0 && (push!(trajectory, current); continue)
@@ -55,6 +57,7 @@ function _propagate_tamen_trajectory(generator, state, times;
             interval_options; kwargs...)
         current = tt_round(extract_snapshot(space_time, local_time_grid, 1.0, scheme), Float64(state_tolerance))
         push!(trajectory, current)
+        callback !== nothing && callback(interval - 1, time_grid[interval], current)
     end
     trajectory
 end
@@ -63,12 +66,12 @@ function propagate_heom_tamen(system::HEOMTTSystem, state::TTTensor, times;
                               temporal_basis_size::Integer=3, tolerance::Real=1e-8,
                               state_tolerance::Real=1e-12, generator_tolerance::Real=1e-12,
                               options=Dict{Symbol,Any}(), conserved_observables=nothing,
-                              preserve_trace=false)
+                              preserve_trace=false, callback=nothing)
     generator, trace_observable, _ = build_heom_liouvillian(system; tol=Float64(generator_tolerance))
     _propagate_tamen_trajectory(generator, state, times;
         expected_dimensions=heom_tt_dimensions(system), temporal_basis_size, tolerance,
         state_tolerance, options, conserved_observables, preserve_trace,
-        trace_observable)
+        trace_observable, callback)
 end
 
 function _full_multicore_heom_trace_observable(system::MultiCoreHEOMTTSystem; tol::Float64=1e-12)
@@ -81,13 +84,13 @@ function propagate_multicore_heom_tamen(system::MultiCoreHEOMTTSystem, state::TT
                                         temporal_basis_size::Integer=3, tolerance::Real=1e-8,
                                         state_tolerance::Real=1e-12, generator_tolerance::Real=1e-12,
                                         options=Dict{Symbol,Any}(), conserved_observables=nothing,
-                                        preserve_trace=false)
+                                        preserve_trace=false, callback=nothing)
     generator = build_multicore_heom_generator(system; tol=Float64(generator_tolerance))
     trace_observable = preserve_trace ? _full_multicore_heom_trace_observable(system; tol=Float64(generator_tolerance)) : nothing
     _propagate_tamen_trajectory(generator, state, times;
         expected_dimensions=multicore_heom_dimensions(system), temporal_basis_size, tolerance,
         state_tolerance, options, conserved_observables, preserve_trace,
-        trace_observable)
+        trace_observable, callback)
 end
 
 function propagate_multicore_redfield_tamen(system::MultiCoreRedfieldTTSystem,
@@ -95,12 +98,12 @@ function propagate_multicore_redfield_tamen(system::MultiCoreRedfieldTTSystem,
                                             temporal_basis_size::Integer=3, tolerance::Real=1e-8,
                                             state_tolerance::Real=1e-12, generator_tolerance::Real=1e-12,
                                             options=Dict{Symbol,Any}(), conserved_observables=nothing,
-                                            preserve_trace=false)
+                                            preserve_trace=false, callback=nothing)
     generator = build_multicore_redfield_generator(system; tol=Float64(generator_tolerance))
     trace_system = MultiCoreHEOMTTSystem(system.hamiltonian, MultiCoreBathCoupling[], Int[])
     trace_observable = preserve_trace ? build_multicore_trace_observable(trace_system; tol=Float64(generator_tolerance)) : nothing
     _propagate_tamen_trajectory(generator, state, times;
         expected_dimensions=multicore_physical_dimensions(trace_system), temporal_basis_size,
         tolerance, state_tolerance, options, conserved_observables, preserve_trace,
-        trace_observable)
+        trace_observable, callback)
 end
