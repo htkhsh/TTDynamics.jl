@@ -196,9 +196,11 @@ The existing Redfield propagation body will move out of
 `src/multicore_redfield.jl` and use this shared implementation. Generator and
 trace-functional construction remain dispatched by system type. Each
 nonzero interval builds a short space-time tensor, calls `tamen`, extracts the
-endpoint using the Crank-Nicolson interpolation convention already used by
-TTDynamics, rounds the endpoint, and appends it to the returned trajectory.
-Repeated time values append the unchanged current state.
+endpoint using the time scheme selected in `options` (`"cheb"` by default),
+rounds the endpoint, and appends it to the returned trajectory. This removes
+the existing mismatch in which Redfield propagation always labels endpoint
+extraction as Crank-Nicolson even when `tamen` used its default Chebyshev
+scheme. Repeated time values append the unchanged current state.
 
 This organization keeps numerical propagation rules in one unit while
 leaving HEOM and Redfield generator construction in their existing modules.
