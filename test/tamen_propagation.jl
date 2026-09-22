@@ -1,3 +1,13 @@
+using LinearAlgebra
+using Test
+using TTSolver
+using HEOMKit
+
+if !isdefined(@__MODULE__, :TTDynamics)
+    include(joinpath(@__DIR__, "..", "src", "TTDynamics.jl"))
+end
+using .TTDynamics
+
 @testset "shared tAMEn propagation contract" begin
     h = tt_matrix(ComplexF64[0.2 0.0; 0.0 -0.2])
     system = MultiCoreRedfieldTTSystem(h, [ComplexF64[0.2 0.0; 0.0 -0.2]],
