@@ -238,9 +238,37 @@ HEOM equations:
 TT structure: `ket | bra | b₁ | b₂ | ... | bₙ`
 
 Returns:
+
 - `XOP`: HEOM Liouvillian (TTMatrix)
 - `Ix`: Trace operator (TTTensor)
 - `Pop`: Population operators (Vector{TTTensor})
+
+#### tAMEn propagation and conserved observables
+
+`propagate_heom_tamen`, `propagate_multicore_heom_tamen`, and
+`propagate_multicore_redfield_tamen` share the same propagation contract. Each
+returns one `TTTensor` per requested time, accepts nondecreasing time grids,
+and uses the selected `options[:time_scheme]` (defaulting to Chebyshev) when
+extracting interval endpoints.
+
+```julia
+trajectory = propagate_heom_tamen(
+    system, state, times;
+    preserve_trace=false,
+    conserved_observables=TTTensor[],
+    options=Dict(:verb => 0),
+)
+```
+
+`preserve_trace=true` adds the full-state trace observable to tAMEn's native
+conservation constraints and disables the legacy Euclidean 2-norm correction.
+No post-step state correction is performed. `conserved_observables` uses the
+same native API for all three wrappers; each tensor must match the propagated
+state dimensions. Existing `options[:obs]` remains supported, but cannot be
+combined with either new constraint source. For MultiCore HEOM, trace
+preservation contracts both the physical trace and the hierarchy vacuum
+(`multicore_heom_dimensions(system)`); `build_multicore_trace_observable`
+itself remains the physical-only observable for backwards compatibility.
 
 #### `build_initial_state`
 ```julia
