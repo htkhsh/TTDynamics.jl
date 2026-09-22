@@ -48,6 +48,7 @@ export PhysicalQuantity,
        liouville_right,
        root_density_matrix,
        build_heom_liouvillian,
+       propagate_heom_tamen,
        build_initial_state,
        MultiCoreBathCoupling,
        MultiCoreHEOMTTSystem,
@@ -61,6 +62,7 @@ export PhysicalQuantity,
        build_multicore_trace_observable,
        build_multicore_local_observable,
        multicore_expectation,
+       propagate_multicore_heom_tamen,
        MultiCoreRedfieldTTSystem,
        build_multicore_redfield_dissipator,
        build_multicore_redfield_generator,
@@ -75,6 +77,7 @@ include("correlation.jl")
 include("multicore_heom.jl")
 include("multicore_states.jl")
 include("multicore_redfield.jl")
+include("tamen_propagation.jl")
 include("tt_io.jl")
 
 end
