@@ -5,11 +5,11 @@ using TTDynamics
 using TTSolver
 using HEOMKit
 
-include("../examples/holstein_current_correlation/config.jl")
-include("../examples/holstein_current_correlation/model.jl")
-include("../examples/holstein_current_correlation/utils.jl")
-include("../examples/holstein_current_correlation/equilibrate.jl")
-include("../examples/holstein_current_correlation/current_correlation.jl")
+include("../examples/holstein/config.jl")
+include("../examples/holstein/model.jl")
+include("../examples/holstein/utils.jl")
+include("../examples/holstein/equilibrate.jl")
+include("../examples/holstein/current_correlation.jl")
 
 @testset "Holstein current-correlation local ownership" begin
     @test DEFAULT_CURRENT_CORRELATION_CONFIG isa HolsteinCurrentCorrelationConfig
@@ -27,9 +27,48 @@ include("../examples/holstein_current_correlation/current_correlation.jl")
     end
     cross_example_path = joinpath("..", "holstein")
     for file in ("equilibrate.jl", "current_correlation.jl", "utils.jl", "model.jl")
-        source = read(joinpath(@__DIR__, "..", "examples",
-                               "holstein_current_correlation", file), String)
+        source = read(joinpath(@__DIR__, "..", "examples", "holstein", file), String)
         @test !occursin(cross_example_path, source)
+    end
+end
+
+@testset "Holstein compact configuration" begin
+    @test isdefined(@__MODULE__, :DEFAULT_CONFIG)
+    if isdefined(@__MODULE__, :DEFAULT_CONFIG)
+        @test DEFAULT_CONFIG isa NamedTuple
+        @test !(:final_time_fs in keys(DEFAULT_CONFIG))
+        @test !(:validation_final_time_fs in keys(DEFAULT_CONFIG))
+        @test !(:validation_sample_count in keys(DEFAULT_CONFIG))
+        @test !(:bcf_upper_bound_cm in keys(DEFAULT_CONFIG))
+        @test merge(DEFAULT_CONFIG, (; initial_condition=:gibbs)).initial_condition == :gibbs
+        @test EQUILIBRATION_TIME_FS == 1000.0
+        @test CORRELATION_TIME_FS == 200.0
+    end
+end
+
+@testset "Holstein compact model" begin
+    @test isdefined(@__MODULE__, :holstein_hamiltonian)
+    if isdefined(@__MODULE__, :holstein_hamiltonian) &&
+       isdefined(@__MODULE__, :site_projectors) &&
+       isdefined(@__MODULE__, :decompose_bath) &&
+       isdefined(@__MODULE__, :build_problem) &&
+       isdefined(@__MODULE__, :current_operator)
+        config = merge(
+            DEFAULT_CONFIG,
+            (; site_count=2, site_energies_cm=[10.0, -5.0], hopping_cm=2.0,
+               hierarchy_local_size=1, pade_order=1, tpsd_tolerance=0.5),
+        )
+        @test holstein_hamiltonian(config) ≈ ComplexF64[10 -2; -2 -5]
+        projectors = site_projectors(2)
+        @test length(projectors) == 2
+        @test sum(projectors) == Matrix{ComplexF64}(I, 2, 2)
+        @test current_operator(config) ==
+              ComplexF64[0 -2im * HEOMKit.icm2ifs; 2im * HEOMKit.icm2ifs 0]
+        decomposition = decompose_bath(config)
+        @test propertynames(decomposition) == (:exponents, :coefficients)
+        problem = build_problem(config, decomposition)
+        @test hasproperty(problem, :trace_observable)
+        @test hasproperty(problem, :population_observables)
     end
 end
 
@@ -48,6 +87,29 @@ end
           joinpath("diagnostics", "holstein_current_correlation_ranks.png")
 end
 
+@testset "Holstein configuration omits unused BCF validation controls" begin
+    @test_throws MethodError HolsteinCurrentCorrelationConfig(
+        validation_final_time_fs=100.0,
+    )
+    @test_throws MethodError HolsteinCurrentCorrelationConfig(
+        validation_sample_count=200,
+    )
+    @test_throws MethodError HolsteinCurrentCorrelationConfig(
+        bcf_upper_bound_cm=10_000.0,
+    )
+end
+
+@testset "Holstein bath decomposition contains only HEOM terms" begin
+    config = HolsteinCurrentCorrelationConfig(
+        site_count=2,
+        site_energies_cm=zeros(2),
+        pade_order=1,
+        tpsd_tolerance=0.5,
+    )
+    decomposition = decompose_current_correlation_bath(config)
+    @test propertynames(decomposition) == (:exponents, :coefficients)
+end
+
 function current_correlation_problem(config)
     decomposition = (
         exponents=ComplexF64[0.4],
@@ -60,10 +122,61 @@ function unchecked_holstein_config(config; site_count=config.site_count,
                                    hopping_cm=config.hopping_cm,
                                    progress_interval=config.progress_interval)
     values = Any[getfield(config, index) for index in 1:fieldcount(HolsteinCurrentCorrelationConfig)]
-    values[1] = site_count
-    values[3] = hopping_cm
-    values[25] = progress_interval
+    fields = fieldnames(HolsteinCurrentCorrelationConfig)
+    values[findfirst(==(:site_count), fields)] = site_count
+    values[findfirst(==(:hopping_cm), fields)] = hopping_cm
+    values[findfirst(==(:progress_interval), fields)] = progress_interval
     return HolsteinCurrentCorrelationConfig(values...)
+end
+
+@testset "Holstein equilibration initial conditions" begin
+    localized_config = HolsteinCurrentCorrelationConfig(
+        site_count=3,
+        site_energies_cm=[0.0, 30.0, -10.0],
+        hopping_cm=20.0,
+        initial_site=2,
+    )
+    @test localized_config.initial_condition == :localized
+    @test_throws ArgumentError HolsteinCurrentCorrelationConfig(initial_condition=:invalid)
+
+    H_fs = periodic_current_correlation_hamiltonian(
+        localized_config.site_energies_cm,
+        localized_config.hopping_cm,
+    ) * HEOMKit.icm2ifs
+    system = HEOMTTSystem(H_fs, NoiseExp(BathExp[]), Int[])
+    localized = build_equilibration_initial_state(localized_config, system)
+    expected_localized = zeros(ComplexF64, 3, 3)
+    expected_localized[2, 2] = 1
+    @test root_density_matrix(localized, system) ≈ expected_localized
+
+    gibbs_config = HolsteinCurrentCorrelationConfig(
+        site_count=3,
+        site_energies_cm=localized_config.site_energies_cm,
+        hopping_cm=localized_config.hopping_cm,
+        temperature_K=300.0,
+        initial_condition=:gibbs,
+    )
+    gibbs = build_equilibration_initial_state(gibbs_config, system)
+    density = root_density_matrix(gibbs, system)
+    beta_fs = QFiND.ħ * 1e15 / (QFiND.kb * gibbs_config.temperature_K)
+    expected_gibbs = exp(-beta_fs * H_fs)
+    expected_gibbs ./= tr(expected_gibbs)
+    @test density ≈ expected_gibbs atol=1e-12
+    @test ishermitian(density)
+    @test tr(density) ≈ 1
+    @test minimum(eigvals(Hermitian(density))) >= -1e-12
+
+    _, trace_observable, population_observables =
+        build_heom_liouvillian(system; tol=1e-14)
+    measurement = measure_heom_state(
+        gibbs,
+        trace_observable,
+        population_observables,
+        system,
+    )
+    @test measurement.coherence_pairs == [(1, 2), (1, 3), (2, 3)]
+    @test measurement.coherences ≈
+          ComplexF64[expected_gibbs[i, j] for (i, j) in measurement.coherence_pairs]
 end
 
 function metadata_error(f)
@@ -81,7 +194,6 @@ function metadata_fixture()
         site_count=2,
         site_energies_cm=[10.0, -5.0],
         hopping_cm=2.0,
-        final_time_fs=1.0,
         hierarchy_local_size=2,
         operator_tolerance=1e-14,
     )
@@ -106,7 +218,6 @@ function equilibration_fixture()
         site_count=2,
         site_energies_cm=zeros(2),
         hopping_cm=2.0,
-        final_time_fs=1.0,
         time_step_fs=1.0,
         hierarchy_local_size=2,
         operator_tolerance=1e-14,
@@ -137,7 +248,6 @@ end
         site_count=3,
         site_energies_cm=zeros(3),
         hopping_cm=2.0,
-        final_time_fs=1.0,
     )
     current = periodic_current_operator(config)
     scale = config.hopping_cm * HEOMKit.icm2ifs
@@ -153,7 +263,6 @@ end
         site_count=2,
         site_energies_cm=zeros(2),
         hopping_cm=2.0,
-        final_time_fs=1.0,
     )
     current2 = periodic_current_operator(config2)
     @test current2 == ComplexF64[0 -1im * scale; 1im * scale 0]
@@ -176,8 +285,10 @@ end
     @test metadata["version"] == 1
     @test metadata["heom_representation"] == "twin-space-v1"
     @test metadata["equilibration_time_fs"] == 1000.0
+    @test !haskey(metadata, "final_time_fs")
     for field in fieldnames(HolsteinCurrentCorrelationConfig)
-        expected = field === :pade_type ? string(config.pade_type) : getfield(config, field)
+        expected = field in (:initial_condition, :pade_type) ?
+                   string(getfield(config, field)) : getfield(config, field)
         @test metadata[String(field)] == expected
     end
     @test metadata["site_count"] == config.site_count
@@ -286,7 +397,6 @@ end
         site_count=2,
         site_energies_cm=zeros(2),
         hopping_cm=2.0,
-        final_time_fs=1.0,
         hierarchy_local_size=2,
         operator_tolerance=1e-14,
     )
@@ -332,7 +442,6 @@ end
         site_count=2,
         site_energies_cm=zeros(2),
         hopping_cm=2.0,
-        final_time_fs=1.0,
         hierarchy_local_size=2,
         operator_tolerance=1e-14,
         state_rounding_tolerance=1e-14,
@@ -397,8 +506,11 @@ end
         build_initial_state(problem.system, 1; tol=1e-14),
         problem.trace_observable,
         problem.population_observables,
+        problem.system,
     )
     @test measurement.populations ≈ [1.0, 0.0]
+    @test measurement.coherence_pairs == [(1, 2)]
+    @test measurement.coherences ≈ ComplexF64[0]
     @test measurement.trace ≈ 1.0
     @test measurement.maximum_rank >= 1
     @test measurement.mean_rank >= 1
@@ -413,7 +525,7 @@ end
             @__DIR__,
             "..",
             "examples",
-            "holstein_current_correlation",
+            "holstein",
             "equilibrate.jl",
         )
         cp(equilibrate_source, joinpath(fixture_directory, "equilibrate.jl"))
@@ -472,7 +584,7 @@ end
             @__DIR__,
             "..",
             "examples",
-            "holstein_current_correlation",
+            "holstein",
             "equilibrate.jl",
         )
         cp(equilibrate_source, joinpath(fixture_directory, "equilibrate.jl"))
@@ -530,6 +642,9 @@ end
     )
     @test result.times == [0.0, 1.0]
     @test size(result.populations) == (config.site_count, 2)
+    @test result.coherence_pairs == [(1, 2)]
+    @test size(result.coherences) == (1, 2)
+    @test result.coherences ≈ zeros(ComplexF64, 1, 2)
     @test length(result.trace) == length(result.times)
     @test length(result.maximum_rank) == length(result.times)
     @test length(result.mean_rank) == length(result.times)
@@ -608,6 +723,9 @@ end
         @test only(plot_calls)[2] === result
         @test basename(outputs.metadata_path) == "holstein_equilibrium_metadata.toml"
         @test basename(outputs.png_path) == "holstein_equilibration_populations.png"
+        @test first(readlines(outputs.csv_path)) ==
+              "time_fs,population_site_1,population_site_2," *
+              "coherence_1_2_real,coherence_1_2_imag,trace,max_rank,mean_rank"
         @test_throws ArgumentError write_equilibration_csv(outputs.csv_path, result)
         restored = load_tt_binary(outputs.state_path)
         @test validate_equilibrium_state(
@@ -967,7 +1085,7 @@ end
 end
 
 @testset "Holstein current-correlation executable guard" begin
-    example_directory = joinpath(@__DIR__, "..", "examples", "holstein_current_correlation")
+    example_directory = joinpath(@__DIR__, "..", "examples", "holstein")
     correlation_script = repr(joinpath(example_directory, "current_correlation.jl"))
     snapshot_example_directory = function (directory)
         entries = Dict{String,Any}()
@@ -1024,4 +1142,28 @@ end
         @test isempty(readdir(directory))
     end
     @test snapshot_example_directory(example_directory) == snapshot_before
+end
+
+@testset "Holstein equilibration population and coherence figure" begin
+    example_directory = joinpath(@__DIR__, "..", "examples", "holstein")
+    plotting_script = repr(joinpath(example_directory, "plotting.jl"))
+    expression = """
+        include($plotting_script)
+        result = (
+            times=[0.0, 1.0],
+            populations=[1.0 0.8; 0.0 0.1; 0.0 0.1],
+            coherence_pairs=[(1, 2), (1, 3), (2, 3)],
+            coherences=ComplexF64[0.1 0.2; 0.3im 0.2im; 0.05+0.02im 0.04+0.01im],
+        )
+        figure = _equilibration_figure(result)
+        plot_axes = filter(content -> content isa Axis, figure.content)
+        @assert length(plot_axes) == 2
+        @assert length(plot_axes[1].scene.plots) == 3
+        @assert length(plot_axes[2].scene.plots) == 3
+        @assert [plot.label[] for plot in plot_axes[2].scene.plots] ==
+                [\"|rho[1,2]|\", \"|rho[1,3]|\", \"|rho[2,3]|\"]
+    """
+    command = `$(Base.julia_cmd()) --startup-file=no -e $expression`
+    process = run(ignorestatus(command))
+    @test success(process)
 end
