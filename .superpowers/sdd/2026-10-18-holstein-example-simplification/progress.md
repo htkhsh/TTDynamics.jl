@@ -5,6 +5,6 @@ Pre-flight: Task 2 produces propagation and measurement result tuples consumed b
 Pre-flight: Task 3 produces the direct plot writers and workflow outputs consumed by Task 4 README/tests; output names remain unchanged.
 
 Task 1: complete (focused compact configuration/model test: 8/8)
-Task 2: pending
+Task 2: in progress
 Task 3: pending
 Task 4: pending
