@@ -33,7 +33,8 @@ function equilibrate_main(config=DEFAULT_CONFIG;
     write_equilibrium_metadata(metadata_path, metadata; overwrite=true)
     write_equilibration_csv(csv_path, result; overwrite=true)
     _ensure_holstein_plotting()
-    save_equilibration_plot(plot_path, result)
+    plotter = Base.invokelatest(getfield, @__MODULE__, :save_equilibration_plot)
+    Base.invokelatest(plotter, plot_path, result)
 
     println("  final trace = $(result.trace[end])")
     println("  final TT ranks = $(tt_ranks(result.state))")

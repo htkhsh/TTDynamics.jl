@@ -38,8 +38,10 @@ function current_correlation_main(config=DEFAULT_CONFIG;
     rank_plot_path = joinpath(directory, CORRELATION_RANK_PLOT_FILENAME)
     write_current_correlation_csv(csv_path, result; overwrite=true)
     _ensure_holstein_plotting()
-    save_current_plot(plot_path, result)
-    save_rank_plot(rank_plot_path, result)
+    current_plotter = Base.invokelatest(getfield, @__MODULE__, :save_current_plot)
+    rank_plotter = Base.invokelatest(getfield, @__MODULE__, :save_rank_plot)
+    Base.invokelatest(current_plotter, plot_path, result)
+    Base.invokelatest(rank_plotter, rank_plot_path, result)
 
     println("  initial correlation = $(result.correlation[1])")
     println("  final TT ranks = $(tt_ranks(result.state))")
