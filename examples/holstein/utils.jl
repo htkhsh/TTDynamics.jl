@@ -1,5 +1,6 @@
 using LinearAlgebra
 using Statistics
+using TOML
 using TTDynamics
 using TTSolver
 
@@ -175,4 +176,80 @@ function run_current_correlation(equilibrium_state::TTTensor, config, problem;
             maximum_rank,
             mean_rank,
             state)
+end
+
+function equilibrium_metadata(config, problem, state; equilibration_time_fs::Real)
+    return Dict(
+        "identifier" => "TTDynamics Holstein HEOM-TT equilibrium",
+        "version" => 1,
+        "site_count" => config.site_count,
+        "initial_condition" => String(config.initial_condition),
+        "equilibration_time_fs" => Float64(equilibration_time_fs),
+        "hierarchy_sizes" => Int.(problem.system.nb),
+        "tt_dimensions" => Int.(tt_dims(state)),
+    )
+end
+
+function write_equilibrium_metadata(path::AbstractString, metadata; overwrite::Bool=true)
+    !overwrite && ispath(path) && throw(ArgumentError("target already exists: $path"))
+    open(String(path), "w") do io
+        TOML.print(io, metadata)
+    end
+    return String(path)
+end
+
+read_equilibrium_metadata(path::AbstractString) = TOML.parsefile(String(path))
+
+function validate_equilibrium_metadata(metadata, config, problem, state)
+    required = ("identifier", "version", "site_count", "initial_condition",
+                "equilibration_time_fs", "hierarchy_sizes", "tt_dimensions")
+    all(key -> haskey(metadata, key), required) ||
+        throw(ArgumentError("equilibrium metadata is missing a required key"))
+    metadata["identifier"] == "TTDynamics Holstein HEOM-TT equilibrium" ||
+        throw(ArgumentError("equilibrium metadata identifier does not match"))
+    metadata["version"] == 1 || throw(ArgumentError("unsupported equilibrium metadata version"))
+    metadata["site_count"] == config.site_count ||
+        throw(DimensionMismatch("equilibrium site_count does not match config"))
+    metadata["initial_condition"] == String(config.initial_condition) ||
+        throw(ArgumentError("equilibrium initial_condition does not match config"))
+    Int.(metadata["hierarchy_sizes"]) == Int.(problem.system.nb) ||
+        throw(DimensionMismatch("equilibrium hierarchy sizes do not match problem"))
+    Int.(metadata["tt_dimensions"]) == Int.(tt_dims(state)) ||
+        throw(DimensionMismatch("equilibrium TT dimensions do not match state"))
+    return nothing
+end
+
+function write_equilibration_csv(path::AbstractString, result; overwrite::Bool=true)
+    !overwrite && ispath(path) && throw(ArgumentError("target already exists: $path"))
+    open(String(path), "w") do io
+        headers = ["time_fs", ["population_site_$site" for site in axes(result.populations, 1)]...]
+        for (row, column) in result.coherence_pairs
+            append!(headers, ["coherence_$(row)_$(column)_real",
+                             "coherence_$(row)_$(column)_imag"])
+        end
+        append!(headers, ["trace", "max_rank", "mean_rank"])
+        println(io, join(headers, ","))
+        for index in eachindex(result.times)
+            row = Any[result.times[index], result.populations[:, index]...]
+            for value in result.coherences[:, index]
+                append!(row, (real(value), imag(value)))
+            end
+            append!(row, (result.trace[index], result.maximum_rank[index], result.mean_rank[index]))
+            println(io, join(row, ","))
+        end
+    end
+    return String(path)
+end
+
+function write_current_correlation_csv(path::AbstractString, result; overwrite::Bool=true)
+    !overwrite && ispath(path) && throw(ArgumentError("target already exists: $path"))
+    open(String(path), "w") do io
+        println(io, "time_fs,correlation_real_fs^-2,correlation_imag_fs^-2,max_rank,mean_rank")
+        for index in eachindex(result.times)
+            value = result.correlation[index]
+            println(io, join((result.times[index], real(value), imag(value),
+                             result.maximum_rank[index], result.mean_rank[index]), ","))
+        end
+    end
+    return String(path)
 end

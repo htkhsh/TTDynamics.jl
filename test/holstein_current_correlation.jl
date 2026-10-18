@@ -91,3 +91,33 @@ end
     @test correlation.times == [0.0]
     @test length(correlation.correlation) == 1
 end
+
+@testset "Holstein example persistence" begin
+    config = merge(DEFAULT_CONFIG, (site_count=2, site_energies_cm=zeros(2)))
+    decomposition = (exponents=ComplexF64[1 + 0im], coefficients=ComplexF64[1 + 0im])
+    @test isdefined(Main, :write_equilibrium_metadata)
+    @test isdefined(Main, :write_equilibration_csv)
+    mktempdir() do directory
+        metadata_path = joinpath(directory, "state.toml")
+        csv_path = joinpath(directory, "equilibration.csv")
+        fake_problem = (system=(nb=[2, 2],),)
+        fake_state = (cores=Any[],)
+        metadata = Dict("identifier" => "TTDynamics Holstein HEOM-TT equilibrium",
+                        "version" => 1,
+                        "site_count" => 2,
+                        "initial_condition" => "localized",
+                        "equilibration_time_fs" => 1.0,
+                        "hierarchy_sizes" => [2, 2],
+                        "tt_dimensions" => [2, 2, 2, 2])
+        write_equilibrium_metadata(metadata_path, metadata)
+        @test read_equilibrium_metadata(metadata_path)["site_count"] == 2
+        result = (; times=[0.0], populations=[1.0 0.0;],
+                  coherence_pairs=Tuple{Int,Int}[], coherences=zeros(ComplexF64, 0, 1),
+                  trace=[1.0], maximum_rank=[1], mean_rank=[1.0])
+        write_equilibration_csv(csv_path, result)
+        @test read(csv_path, String) |> contains("population_site_1")
+        @test decomposition.exponents[1] == 1 + 0im
+        @test fake_problem.system.nb == [2, 2]
+        @test fake_state.cores == Any[]
+    end
+end

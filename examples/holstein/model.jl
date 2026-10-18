@@ -1,7 +1,7 @@
 using LinearAlgebra
 using TTDynamics
 using QFiND
-using HEOMKit: icm2ifs
+using HEOMKit: icm2ifs, BathExp, NoiseExp
 
 function holstein_hamiltonian(config)
     site_count = config.site_count

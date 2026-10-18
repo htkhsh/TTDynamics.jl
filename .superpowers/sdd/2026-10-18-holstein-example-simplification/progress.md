@@ -6,5 +6,5 @@ Pre-flight: Task 3 produces the direct plot writers and workflow outputs consume
 
 Task 1: complete (focused compact configuration/model test: 8/8)
 Task 2: in progress
-Task 3: pending
+Task 3: in progress
 Task 4: pending
