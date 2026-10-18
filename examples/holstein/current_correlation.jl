@@ -3,7 +3,9 @@ using TTDynamics
 isdefined(@__MODULE__, :DEFAULT_CONFIG) || include(joinpath(@__DIR__, "config.jl"))
 isdefined(@__MODULE__, :build_problem) || include(joinpath(@__DIR__, "model.jl"))
 isdefined(@__MODULE__, :run_current_correlation) || include(joinpath(@__DIR__, "utils.jl"))
-isdefined(@__MODULE__, :save_current_plot) || include(joinpath(@__DIR__, "plotting.jl"))
+
+_ensure_holstein_plotting() = isdefined(@__MODULE__, :save_current_plot) ||
+                              include(joinpath(@__DIR__, "plotting.jl"))
 
 const CORRELATION_OUTPUT_DIRECTORY = joinpath(@__DIR__, "output")
 const CORRELATION_STATE_FILENAME = "holstein_equilibrium.ttbin"
@@ -35,6 +37,7 @@ function current_correlation_main(config=DEFAULT_CONFIG;
     plot_path = joinpath(directory, CORRELATION_PLOT_FILENAME)
     rank_plot_path = joinpath(directory, CORRELATION_RANK_PLOT_FILENAME)
     write_current_correlation_csv(csv_path, result; overwrite=true)
+    _ensure_holstein_plotting()
     save_current_plot(plot_path, result)
     save_rank_plot(rank_plot_path, result)
 

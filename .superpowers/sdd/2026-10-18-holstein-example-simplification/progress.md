@@ -5,6 +5,9 @@ Pre-flight: Task 2 produces propagation and measurement result tuples consumed b
 Pre-flight: Task 3 produces the direct plot writers and workflow outputs consumed by Task 4 README/tests; output names remain unchanged.
 
 Task 1: complete (focused compact configuration/model test: 8/8)
-Task 2: in progress
-Task 3: in progress
-Task 4: pending
+Task 2: complete (focused propagation tests: 21/21)
+Task 3: complete (focused persistence tests: 7/7; tiny end-to-end workflow verified)
+Task 4: complete (README/test entry updated; full `test/runtests.jl` passed)
+
+Ruling: the bundled `task-start` helper was unavailable, so task starts were recorded manually after running `task-brief`; cost: no generated task-start metadata.
+Final review: self-review of the committed range; subagent dispatch was unavailable/disabled by the active Native execution constraint. Full test suite and a tiny end-to-end workflow passed.

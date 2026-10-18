@@ -3,7 +3,9 @@ using TTDynamics
 isdefined(@__MODULE__, :DEFAULT_CONFIG) || include(joinpath(@__DIR__, "config.jl"))
 isdefined(@__MODULE__, :build_problem) || include(joinpath(@__DIR__, "model.jl"))
 isdefined(@__MODULE__, :run_equilibration) || include(joinpath(@__DIR__, "utils.jl"))
-isdefined(@__MODULE__, :save_equilibration_plot) || include(joinpath(@__DIR__, "plotting.jl"))
+
+_ensure_holstein_plotting() = isdefined(@__MODULE__, :save_equilibration_plot) ||
+                              include(joinpath(@__DIR__, "plotting.jl"))
 
 const EQUILIBRATION_OUTPUT_DIRECTORY = joinpath(@__DIR__, "output")
 const EQUILIBRATION_STATE_FILENAME = "holstein_equilibrium.ttbin"
@@ -30,6 +32,7 @@ function equilibrate_main(config=DEFAULT_CONFIG;
                                     equilibration_time_fs)
     write_equilibrium_metadata(metadata_path, metadata; overwrite=true)
     write_equilibration_csv(csv_path, result; overwrite=true)
+    _ensure_holstein_plotting()
     save_equilibration_plot(plot_path, result)
 
     println("  final trace = $(result.trace[end])")

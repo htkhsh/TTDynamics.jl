@@ -1,6 +1,7 @@
 using LinearAlgebra
 using Statistics
 using TOML
+using QFiND
 using TTDynamics
 using TTSolver
 
