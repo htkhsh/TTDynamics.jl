@@ -14,6 +14,9 @@ include(joinpath(@__DIR__, "..", "examples", "holstein", "utils.jl"))
     @test DEFAULT_CONFIG isa NamedTuple
     @test DEFAULT_CONFIG.initial_condition == :localized
     @test DEFAULT_CONFIG.site_count == length(DEFAULT_CONFIG.site_energies_cm)
+    @test DEFAULT_CONFIG.equilibration_tamen_tolerance == 2e-2
+    @test DEFAULT_CONFIG.correlation_tamen_tolerance == 2e-2
+    @test !(:tamen_tolerance in propertynames(DEFAULT_CONFIG))
     @test !(:final_time_fs in propertynames(DEFAULT_CONFIG))
     @test !(:validation_final_time_fs in propertynames(DEFAULT_CONFIG))
     @test !(:validation_sample_count in propertynames(DEFAULT_CONFIG))
@@ -53,7 +56,8 @@ end
         pade_order=1,
         hierarchy_local_size=2,
         temporal_basis_size=3,
-        tamen_tolerance=5e-2,
+        equilibration_tamen_tolerance=5e-2,
+        correlation_tamen_tolerance=3e-2,
         operator_tolerance=1e-8,
         state_rounding_tolerance=1e-8,
         sweep_count=1,

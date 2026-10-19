@@ -87,7 +87,8 @@ function current_heom_operators(config, problem)
 end
 
 function tamen_step(state::TTTensor, liouvillian::TTMatrix, config,
-                    trace_observable, workspace::TAMEnWorkspace)
+                    trace_observable, workspace::TAMEnWorkspace;
+                    tolerance::Real=config.equilibration_tamen_tolerance)
     space_time_state = tt_kron(
         state,
         tt_ones(config.temporal_basis_size; T=ComplexF64),
@@ -95,7 +96,7 @@ function tamen_step(state::TTTensor, liouvillian::TTMatrix, config,
     space_time_state, time_grid, _, _, _ = tamen(
         space_time_state,
         config.time_step_fs * liouvillian,
-        config.tamen_tolerance;
+        tolerance;
         verb=0,
         nswp=config.sweep_count,
         local_iters=config.local_iterations,
@@ -152,7 +153,8 @@ function run_equilibration(config, problem;
     end
     for _ in 1:count
         state = tamen_step(state, problem.liouvillian, config,
-                           problem.trace_observable, workspace)
+                           problem.trace_observable, workspace;
+                           tolerance=config.equilibration_tamen_tolerance)
         observation = measure_density(state, problem)
         push!(observations, observation)
         step = length(observations) - 1
@@ -184,7 +186,8 @@ function run_current_correlation(equilibrium_state::TTTensor, config, problem;
     end
     for _ in 1:count
         state = tamen_step(state, problem.liouvillian, config,
-                           problem.trace_observable, workspace)
+                           problem.trace_observable, workspace;
+                           tolerance=config.correlation_tamen_tolerance)
         push!(correlations, ComplexF64(tt_dot(operators.observable, state)))
         ranks = tt_ranks(state)
         push!(maximum_rank, maximum(ranks))

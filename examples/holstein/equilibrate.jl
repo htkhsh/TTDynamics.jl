@@ -19,7 +19,7 @@ function equilibrate_main(config=DEFAULT_CONFIG;
     println("Holstein HEOM-TT equilibration")
     decomposition = decompose_bath(config)
     problem = build_problem(config, decomposition)
-    println("  step        time_fs       trace          max_rank  mean_rank")
+    println("  step        time_fs   trace_error    max_rank  mean_rank")
     result = run_equilibration(
         config,
         problem;
@@ -29,7 +29,7 @@ function equilibrate_main(config=DEFAULT_CONFIG;
             println(
                 "  $(lpad(progress.step, 4))  " *
                 "$(lpad(round(progress.time_fs; digits=3), 10))  " *
-                "$(lpad(round(observation.trace; sigdigits=8), 14))  " *
+                "$(lpad(string(round(abs(observation.trace - 1); sigdigits=8)), 14))  " *
                 "$(lpad(observation.maximum_rank, 8))  " *
                 "$(lpad(round(observation.mean_rank; digits=2), 9))",
             )
@@ -51,7 +51,7 @@ function equilibrate_main(config=DEFAULT_CONFIG;
     plotter = Base.invokelatest(getfield, @__MODULE__, :save_equilibration_plot)
     Base.invokelatest(plotter, plot_path, result)
 
-    println("  final trace = $(result.trace[end])")
+    println("  final trace error = $(abs(result.trace[end] - 1))")
     println("  final TT ranks = $(tt_ranks(result.state))")
     println("  wrote $csv_path")
     println("  wrote $state_path")
