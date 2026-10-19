@@ -140,22 +140,35 @@ end
 
 function run_equilibration(config, problem;
                            duration_fs::Real,
-                           initial_state=nothing)
+                           initial_state=nothing,
+                           progress_callback=nothing)
     count = step_count(duration_fs, config.time_step_fs)
     state = isnothing(initial_state) ? initial_heom_state(config, problem.system) : initial_state
     workspace = TAMEnWorkspace(ComplexF64)
     observations = [measure_density(state, problem)]
+    if progress_callback !== nothing
+        progress_callback((; step=0, step_count=count, time_fs=0.0,
+                           observation=observations[1]))
+    end
     for _ in 1:count
         state = tamen_step(state, problem.liouvillian, config,
                            problem.trace_observable, workspace)
-        push!(observations, measure_density(state, problem))
+        observation = measure_density(state, problem)
+        push!(observations, observation)
+        step = length(observations) - 1
+        if progress_callback !== nothing &&
+           (step == count || step % config.progress_interval == 0)
+            progress_callback((; step, step_count=count,
+                               time_fs=step * config.time_step_fs, observation))
+        end
     end
     times = collect(0:count) .* config.time_step_fs
     return merge(_observations_to_result(observations, times), (; state))
 end
 
 function run_current_correlation(equilibrium_state::TTTensor, config, problem;
-                                 duration_fs::Real)
+                                 duration_fs::Real,
+                                 progress_callback=nothing)
     count = step_count(duration_fs, config.time_step_fs; allow_zero=true)
     operators = current_heom_operators(config, problem)
     exact_source = operators.left_action * equilibrium_state
@@ -164,6 +177,11 @@ function run_current_correlation(equilibrium_state::TTTensor, config, problem;
     correlations = ComplexF64[tt_dot(operators.observable, exact_source)]
     maximum_rank = [maximum(tt_ranks(state))]
     mean_rank = [mean(tt_ranks(state))]
+    if progress_callback !== nothing
+        progress_callback((; step=0, step_count=count, time_fs=0.0,
+                           correlation=correlations[1],
+                           maximum_rank=maximum_rank[1], mean_rank=mean_rank[1]))
+    end
     for _ in 1:count
         state = tamen_step(state, problem.liouvillian, config,
                            problem.trace_observable, workspace)
@@ -171,6 +189,15 @@ function run_current_correlation(equilibrium_state::TTTensor, config, problem;
         ranks = tt_ranks(state)
         push!(maximum_rank, maximum(ranks))
         push!(mean_rank, mean(ranks))
+        step = length(correlations) - 1
+        if progress_callback !== nothing &&
+           (step == count || step % config.progress_interval == 0)
+            progress_callback((; step, step_count=count,
+                               time_fs=step * config.time_step_fs,
+                               correlation=correlations[end],
+                               maximum_rank=maximum_rank[end],
+                               mean_rank=mean_rank[end]))
+        end
     end
     return (; times=collect(0:count) .* config.time_step_fs,
             correlation=correlations,

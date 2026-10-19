@@ -19,7 +19,22 @@ function equilibrate_main(config=DEFAULT_CONFIG;
     println("Holstein HEOM-TT equilibration")
     decomposition = decompose_bath(config)
     problem = build_problem(config, decomposition)
-    result = run_equilibration(config, problem; duration_fs=equilibration_time_fs)
+    println("  step        time_fs       trace          max_rank  mean_rank")
+    result = run_equilibration(
+        config,
+        problem;
+        duration_fs=equilibration_time_fs,
+        progress_callback=progress -> begin
+            observation = progress.observation
+            println(
+                "  $(lpad(progress.step, 4))  " *
+                "$(lpad(round(progress.time_fs; digits=3), 10))  " *
+                "$(lpad(round(observation.trace; sigdigits=8), 14))  " *
+                "$(lpad(observation.maximum_rank, 8))  " *
+                "$(lpad(round(observation.mean_rank; digits=2), 9))",
+            )
+        end,
+    )
 
     directory = String(output_directory)
     mkpath(directory)

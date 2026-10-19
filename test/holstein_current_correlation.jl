@@ -81,15 +81,30 @@ end
     @test isfinite(measured.trace)
     @test measured.maximum_rank >= 1
 
-    equilibration = run_equilibration(config, problem; duration_fs=1.0)
+    equilibration_progress = NamedTuple[]
+    equilibration = run_equilibration(
+        config,
+        problem;
+        duration_fs=1.0,
+        progress_callback=progress -> push!(equilibration_progress, progress),
+    )
     @test equilibration.times == [0.0, 1.0]
     @test size(equilibration.populations) == (2, 2)
     @test size(equilibration.coherences) == (1, 2)
     @test length(equilibration.trace) == 2
+    @test [progress.step for progress in equilibration_progress] == [0, 1]
 
-    correlation = run_current_correlation(localized, config, problem; duration_fs=0.0)
+    correlation_progress = NamedTuple[]
+    correlation = run_current_correlation(
+        localized,
+        config,
+        problem;
+        duration_fs=0.0,
+        progress_callback=progress -> push!(correlation_progress, progress),
+    )
     @test correlation.times == [0.0]
     @test length(correlation.correlation) == 1
+    @test [progress.step for progress in correlation_progress] == [0]
 end
 
 @testset "Holstein example persistence" begin

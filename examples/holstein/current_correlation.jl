@@ -29,8 +29,20 @@ function current_correlation_main(config=DEFAULT_CONFIG;
     state = load_tt_binary(state_path)
     metadata = read_equilibrium_metadata(metadata_path)
     validate_equilibrium_metadata(metadata, config, problem, state)
-    result = run_current_correlation(state, config, problem;
-                                     duration_fs=correlation_time_fs)
+    println("  step        time_fs       correlation                 max_rank  mean_rank")
+    result = run_current_correlation(
+        state,
+        config,
+        problem;
+        duration_fs=correlation_time_fs,
+        progress_callback=progress -> println(
+            "  $(lpad(progress.step, 4))  " *
+            "$(lpad(round(progress.time_fs; digits=3), 10))  " *
+            "$(lpad(string(round(progress.correlation; sigdigits=8)), 26))  " *
+            "$(lpad(progress.maximum_rank, 8))  " *
+            "$(lpad(round(progress.mean_rank; digits=2), 9))",
+        ),
+    )
 
     mkpath(directory)
     csv_path = joinpath(directory, CORRELATION_CSV_FILENAME)

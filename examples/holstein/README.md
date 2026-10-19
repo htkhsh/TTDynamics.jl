@@ -26,6 +26,10 @@ config = merge(DEFAULT_CONFIG, (initial_condition=:gibbs,))
 equilibrate_main(config)
 ```
 
+tAMEn propagation prints step, time, trace/correlation, and TT-rank
+diagnostics at step zero, the final step, and every `config.progress_interval`
+steps.
+
 All HEOM auxiliary modes start in their vacuum component. Each Crank–Nicolson
 tAMEn step preserves the supplied HEOM trace observable within the requested
 solver tolerance (`correct_2_norm=false`); no post-step normalization is
