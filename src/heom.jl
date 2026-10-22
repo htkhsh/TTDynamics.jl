@@ -195,6 +195,66 @@ function _heom_local_matrix(identity_factors::Vector{Matrix{ComplexF64}}, replac
     return _local_product_matrix(factors)
 end
 
+function _heom_identity_factors(system::HEOMTTSystem)
+    system_identity = Matrix{ComplexF64}(I, nsys(system), nsys(system))
+    return [system_identity, system_identity,
+            [Matrix{ComplexF64}(I, size, size) for size in system.nb]...]
+end
+
+"""
+    build_heom_left_action(system, operator; tol=1e-12) -> TTMatrix
+
+Build the action `ρ[n] -> operator * ρ[n]` on every ADO of a twin-space
+`HEOMTTSystem`.
+"""
+function build_heom_left_action(system::HEOMTTSystem, operator::AbstractMatrix;
+                                tol::Float64=1e-12)
+    size(operator) == size(system.H_sys) || throw(DimensionMismatch(
+        "left operator must have dimensions $(size(system.H_sys)); got $(size(operator))",
+    ))
+    all(isfinite, operator) || throw(ArgumentError("left operator must be finite"))
+    isfinite(tol) && tol >= 0 || throw(ArgumentError("tol must be finite and nonnegative"))
+    return tt_round(_heom_local_matrix(_heom_identity_factors(system),
+                                       1 => ComplexF64.(operator)), tol)
+end
+
+"""
+    build_heom_bath_coordinate_left_action(system, bath_index; tol=1e-12) -> TTMatrix
+
+Build left multiplication by bath `bath_index`'s collective coordinate in the
+scaled `NoiseExp` hierarchy. At ADO `n`, mode `k` contributes
+`sqrt((n[k]+1)*abs_coeff[k]) * ρ[n+e[k]]` and
+`sqrt(n[k]/abs_coeff[k]) * c1[k] * ρ[n-e[k]]`.
+"""
+function build_heom_bath_coordinate_left_action(system::HEOMTTSystem,
+                                                 bath_index::Integer;
+                                                 tol::Float64=1e-12)
+    noise = system.noise
+    1 <= bath_index <= noise.nbath || throw(ArgumentError(
+        "bath_index must be in 1:$(noise.nbath); got $bath_index",
+    ))
+    isfinite(tol) && tol >= 0 || throw(ArgumentError("tol must be finite and nonnegative"))
+    count = noise.nterms_bath[bath_index]
+    count > 0 || throw(ArgumentError("bath $bath_index has no exponential terms"))
+    identities = _heom_identity_factors(system)
+    first_mode = noise.jstart_bath[bath_index]
+    result = nothing
+    for k in first_mode:(first_mode + count - 1)
+        scale = noise.abs_coeff[k]
+        isfinite(scale) && scale > 0 || throw(ArgumentError(
+            "bath $bath_index mode $k has zero or nonfinite HEOM scaling",
+        ))
+        size = system.nb[k]
+        raising = diagm(-1 => sqrt.(ComplexF64.(1:(size - 1))))
+        lowering = diagm(1 => sqrt.(ComplexF64.(1:(size - 1))))
+        coordinate = sqrt(scale) * lowering + (noise.c1[k] / sqrt(scale)) * raising
+        term = _heom_local_matrix(identities, (k + 2) => coordinate)
+        result = isnothing(result) ? term : result + term
+        result = tt_round(result, tol)
+    end
+    return result
+end
+
 """    build_heom_liouvillian(params; tol=1e-12) → (XOP, Ix, Pop)"""
 function build_heom_liouvillian(sys::HEOMTTSystem; tol::Float64=1e-12)
     Ns = nsys(sys)
@@ -264,7 +324,8 @@ function build_heom_liouvillian(sys::HEOMTTSystem; tol::Float64=1e-12)
                 hierarchy_mode => bplus_ops[k],
             )
             downward_accumulator = isnothing(downward_accumulator) ?
-                                   -downward_right : downward_accumulator - downward_right
+                                   (-1) * downward_right :
+                                   downward_accumulator - downward_right
         end
 
         if k % 10 == 0

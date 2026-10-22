@@ -6,9 +6,9 @@ using QFiND
 using HEOMKit
 using HEOMKit: icm2ifs
 using ExpFit
-using CairoMakie
 
 include("utils.jl")
+include("../../common/plot_utils.jl")
 
 s = 1.0
 gamma_c = 50.0
@@ -156,54 +156,32 @@ open("ksl_populations.csv", "w") do io
     writedlm(io, rows, ',')
 end
 
-comparison = Figure(size=(900, 600))
-axis = Axis(
-    comparison[1, 1];
-    xlabel="Time [fs]",
-    ylabel="Population",
-    title="Spin-Boson with Ohmic Bath: KSL vs HEOM",
-)
-lines!(axis, times_heom, real.(populations_heom[1, :]); label="HEOM rho11")
-lines!(axis, times_heom, real.(populations_heom[2, :]); label="HEOM rho22")
-lines!(axis, times_ksl, populations_ksl[1, :]; label="KSL P(up)", linestyle=:dash)
-lines!(axis, times_ksl, populations_ksl[2, :]; label="KSL P(down)", linestyle=:dash)
-axislegend(axis; position=:rt)
-save("sb_ohmic_comparison.png", comparison)
-
-norm_figure = Figure(size=(900, 600))
-norm_axis = Axis(
-    norm_figure[1, 1];
-    xlabel="Time [fs]",
-    ylabel="Norm",
-    title="KSL Norm Conservation",
-)
-lines!(norm_axis, times_ksl, norms_ksl; label="KSL norm")
-hlines!(norm_axis, [1.0]; label="exact norm", linestyle=:dash, color=:black)
-axislegend(norm_axis; position=:rt)
-save("sb_ohmic_norm.png", norm_figure)
-
-rank_figure = Figure(size=(900, 600))
-rank_axis = Axis(
-    rank_figure[1, 1];
-    xlabel="Time [fs]",
-    ylabel="TT rank",
-    title="KSL TT Rank History",
-)
-for bond_index in 2:(length(rank_history[1]) - 1)
-    lines!(
-        rank_axis,
-        times_ksl,
-        getindex.(rank_history, bond_index);
-        label="bond $(bond_index - 1)",
-    )
-end
-lines!(
-    rank_axis,
+plot_spin_boson_comparison(
+    times_heom,
+    populations_heom,
     times_ksl,
-    maximum.(rank_history);
-    label="maximum rank",
-    color=:black,
-    linewidth=3,
+    populations_ksl;
+    reference_method="HEOM",
+    method="KSL",
+    xlabel="Time [fs]",
+    title="Spin-Boson with Ohmic Bath: KSL vs HEOM",
+    filename="sb_ohmic_comparison.png",
 )
-axislegend(rank_axis; position=:rt)
-save("sb_ohmic_rank.png", rank_figure)
+
+plot_norm_conservation(
+    times_ksl,
+    norms_ksl;
+    method="KSL",
+    xlabel="Time [fs]",
+    title="KSL Norm Conservation Error",
+    filename="sb_ohmic_norm.png",
+)
+
+plot_tt_rank_history(
+    times_ksl,
+    rank_history;
+    method="KSL",
+    xlabel="Time [fs]",
+    title="KSL TT Rank History",
+    filename="sb_ohmic_rank.png",
+)

@@ -135,7 +135,8 @@ function scheduled_twin_liouvillian(system::HEOMTTSystem; tol::Float64)
                 2 => (system.noise.c2[k] / sqrt_abs_coefficient) * conj(coupling),
                 hierarchy_mode => creation_operators[k],
             )
-            downward = isnothing(downward) ? -downward_term : downward - downward_term
+            downward = isnothing(downward) ?
+                       (-1) * downward_term : downward - downward_term
         end
 
         if k % 10 == 0
@@ -411,7 +412,7 @@ end
         guarded_example_import(spin_boson_example, repository_root, spin_boson_load_path)
 
         holstein_project = joinpath(repository_root, "examples", "holstein")
-        holstein_example = joinpath(holstein_project, "holstein_brownian_heomtt.jl")
+        holstein_example = joinpath(holstein_project, "current_correlation.jl")
         holstein_load_path = join(
             [repository_root, "@", development_root, "@v#.#", "@stdlib"],
             environment_separator,
@@ -420,7 +421,7 @@ end
             holstein_example,
             holstein_project,
             holstein_load_path;
-            required_definition=:run_holstein_dynamics,
+            required_definition=:current_correlation_main,
             require_quiet_output=true,
         )
     else
@@ -475,13 +476,22 @@ end
 
     rho0 = build_initial_state(system, 1; tol=1e-14)
     @test tt_dims(rho0) == [2, 2, 2]
-    space_time = tkron(rho0, tt_ones(2; T=ComplexF64))
-    space_time, time_grid, _, _ = tamen(
-        space_time, 1e-3 * liouvillian, 1e-4,
-        Dict{Symbol,Any}(:verb => 0, :nswp => 1, :local_iters => 2),
+    workspace = TAMEnWorkspace(ComplexF64)
+    space_time = tt_kron(rho0, tt_ones(3; T=ComplexF64))
+    space_time, time_grid, _, _, _ = tamen(
+        space_time,
+        1e-3 * liouvillian,
+        1e-4;
+        verb=0,
+        nswp=1,
+        local_iters=2,
+        time_scheme="CN",
+        correct_2_norm=false,
+        conserved_observables=[trace_observable],
+        workspace,
     )
     propagated = extract_snapshot(space_time, time_grid, 1.0, "CN")
-    @test tt_dot(trace_observable, propagated) ≈ 1.0 atol=1e-3
+    @test tt_dot(trace_observable, propagated) ≈ 1.0 atol=2e-5
 
     algebraic_system = algebraic_twin_test_system()
     algebraic_liouvillian, _, _ = build_heom_liouvillian(algebraic_system; tol=1e-14)
@@ -503,6 +513,27 @@ end
     @test tt_full(liouvillian) ≈ expected rtol=1e-12 atol=1e-12
     @test tt_dims(trace_observable) == [2, 2]
     @test all(population -> tt_dims(population) == [2, 2], populations)
+end
+
+@testset "HEOM twin-space Liouvillian with a leading c2-only mode" begin
+    H = ComplexF64[0.3 0.7; 0.7 -0.4]
+    V = ComplexF64[1 0; 0 -1]
+    # An unmatched exponent with negative imaginary part is expanded by
+    # HEOMKit with its conjugate first.  That leading mode has c1 = 0 and
+    # c2 != 0, so the first downward contribution comes from the right.
+    bath = BathExp(ComplexF64[0.4 - 0.1im],
+                   ComplexF64[0.03 - 0.02im], V)
+    system = HEOMTTSystem(H, NoiseExp(bath), 2)
+    @test iszero(system.noise.c1[1])
+    @test !iszero(system.noise.c2[1])
+
+    liouvillian, trace_observable, _ =
+        build_heom_liouvillian(system; tol=1e-14)
+
+    @test tt_dims(liouvillian) == ([2, 2, 2, 2], [2, 2, 2, 2])
+    dense_trace = vec(tt_full(trace_observable))
+    @test dense_trace' * tt_full(liouvillian) ≈
+          zeros(ComplexF64, 1, 16) atol=1e-12
 end
 
 @testset "HEOM twin-space component rounding schedule" begin

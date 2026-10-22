@@ -14,14 +14,24 @@ include(joinpath(@__DIR__, "..", "examples", "holstein", "utils.jl"))
     @test DEFAULT_CONFIG isa NamedTuple
     @test DEFAULT_CONFIG.initial_condition == :localized
     @test DEFAULT_CONFIG.site_count == length(DEFAULT_CONFIG.site_energies_cm)
-    @test DEFAULT_CONFIG.equilibration_tamen_tolerance == 2e-2
+    @test DEFAULT_CONFIG.equilibration_tamen_tolerance == 1e-2
     @test DEFAULT_CONFIG.correlation_tamen_tolerance == 2e-2
+    @test DEFAULT_CONFIG.blas_threads == 1
+    @test DEFAULT_CONFIG.decomposition_method == :tpsd
     @test !(:tamen_tolerance in propertynames(DEFAULT_CONFIG))
     @test !(:final_time_fs in propertynames(DEFAULT_CONFIG))
     @test !(:validation_final_time_fs in propertynames(DEFAULT_CONFIG))
     @test !(:validation_sample_count in propertynames(DEFAULT_CONFIG))
     @test EQUILIBRATION_TIME_FS > 0
     @test CORRELATION_TIME_FS >= 0
+end
+
+@testset "BLAS thread configuration" begin
+    previous = BLAS.get_num_threads()
+    @test configure_blas(DEFAULT_CONFIG) == 1
+    @test BLAS.get_num_threads() == 1
+    @test_throws ArgumentError configure_blas(merge(DEFAULT_CONFIG, (blas_threads=0,)))
+    BLAS.set_num_threads(previous)
 end
 
 @testset "Holstein compact model" begin
@@ -39,6 +49,10 @@ end
     @test ishermitian(current_operator(config))
     decomposition = decompose_bath(config)
     @test propertynames(decomposition) == (:exponents, :coefficients)
+    psd_config = merge(config, (decomposition_method=:psd,))
+    psd_decomposition = decompose_bath(psd_config)
+    @test !isempty(psd_decomposition.exponents)
+    @test_throws ArgumentError decompose_bath(merge(config, (decomposition_method=:invalid,)))
     problem = build_problem(config, decomposition)
     @test problem.system isa HEOMTTSystem
     @test first(tt_dims(problem.liouvillian)) == heom_tt_dimensions(problem.system)
@@ -92,11 +106,11 @@ end
         duration_fs=1.0,
         progress_callback=progress -> push!(equilibration_progress, progress),
     )
-    @test equilibration.times == [0.0, 1.0]
-    @test size(equilibration.populations) == (2, 2)
-    @test size(equilibration.coherences) == (1, 2)
-    @test length(equilibration.trace) == 2
-    @test [progress.step for progress in equilibration_progress] == [0, 1]
+    @test equilibration.times == [0.0, 0.5, 1.0]
+    @test size(equilibration.populations) == (2, 3)
+    @test size(equilibration.coherences) == (1, 3)
+    @test length(equilibration.trace) == 3
+    @test [progress.step for progress in equilibration_progress] == [0, 2]
 
     correlation_progress = NamedTuple[]
     correlation = run_current_correlation(

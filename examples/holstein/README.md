@@ -13,7 +13,8 @@ julia --project=examples/holstein examples/holstein/current_correlation.jl
 ```
 
 The first command writes an equilibrated state, minimal metadata, CSV
-diagnostics, and a population/coherence plot to `examples/holstein/output/`.
+diagnostics, a population/coherence plot, and an equilibration-rank plot to
+`examples/holstein/output/`.
 The second command reloads that state, checks its layout against the current
 configuration, and writes the current correlation and rank plots.
 
@@ -29,6 +30,14 @@ equilibrate_main(config)
 The solver tolerances are independent: use
 `equilibration_tamen_tolerance` and `correlation_tamen_tolerance` to tune the
 two calculations separately.
+
+Set `blas_threads` in the configuration to control the process-wide BLAS
+thread count. The default is `1`; this avoids oversubscription with Julia/TT
+work. `BLAS.set_num_threads` is applied at the beginning of each entry point.
+
+Set `decomposition_method` to `:tpsd` (default) or `:psd` to select QFiND's
+truncated or full Padé spectral decomposition. `tpsd_tolerance` is used only
+for `:tpsd`.
 
 tAMEn propagation prints step, time, trace error/correlation, and TT-rank
 diagnostics at step zero, the final step, and every `config.progress_interval`

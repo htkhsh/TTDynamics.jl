@@ -1,3 +1,4 @@
+using LinearAlgebra
 using TTDynamics
 
 isdefined(@__MODULE__, :DEFAULT_CONFIG) || include(joinpath(@__DIR__, "config.jl"))
@@ -17,7 +18,10 @@ const CORRELATION_RANK_PLOT_FILENAME = "holstein_current_correlation_ranks.png"
 function current_correlation_main(config=DEFAULT_CONFIG;
                                   correlation_time_fs::Real=CORRELATION_TIME_FS,
                                   output_directory::AbstractString=CORRELATION_OUTPUT_DIRECTORY)
+    configure_blas(config)
     println("Holstein HEOM-TT current correlation")
+    println("  BLAS threads = $(BLAS.get_num_threads())")
+    println("  bath decomposition = $(config.decomposition_method)")
     directory = String(output_directory)
     state_path = joinpath(directory, CORRELATION_STATE_FILENAME)
     metadata_path = joinpath(directory, CORRELATION_METADATA_FILENAME)

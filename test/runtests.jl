@@ -8,6 +8,9 @@ end
 
 include("tt_io.jl")
 include("heom_twin_space.jl")
+include("heom_extended_operator.jl")
+include("peierls_current.jl")
+include("peierls_brownian_tfd.jl")
 include("multicore_heom.jl")
 include("multicore_states.jl")
 include("multicore_redfield.jl")

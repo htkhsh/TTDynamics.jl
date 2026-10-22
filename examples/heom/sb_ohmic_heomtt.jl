@@ -11,12 +11,11 @@
 # System-bath coupling: V = σz
 
 using LinearAlgebra
-using Statistics
 using TTSolver
 using TTDynamics
 using QFiND
 using HEOMKit
-using HEOMKit: icm2ifs, kB
+using HEOMKit: icm2ifs
 using ExpFit
 using CairoMakie
 
@@ -118,7 +117,7 @@ println("\n" * "=" ^ 60)
 println("HEOM-TT: Building Liouvillian...")
 println("=" ^ 60)
 
-# HEOM-TT parameters  
+# HEOM-TT parameters
 Nh = 10         # Maximum hierarchy depth per mode (match HEOM)
 nt = 3           # Number of time points for tAMEn
 tol = 1e-3       # TT tolerance
@@ -132,7 +131,8 @@ println("  HEOM-TT mode dimensions [ket, bra, hierarchy...]: $tt_dimensions")
 println("  TT cores: 2 system cores + $(length(params.nb)) hierarchy cores = $(length(tt_dimensions))")
 
 # Build HEOM Liouvillian
-XOP, Ix, Pop = build_heom_liouvillian(params; tol=1e-10)
+liouvillian, trace_observable, population_observables =
+    build_heom_liouvillian(params; tol=1e-10)
 
 # Build initial state (|1⟩⟨1|)
 rho0_tt = build_initial_state(params, 1)
@@ -145,63 +145,67 @@ println("\n" * "=" ^ 60)
 println("HEOM-TT: Running tAMEn time evolution...")
 println("=" ^ 60)
 
-opts = Dict(
-    :verb => 0,
-    :nswp => 5,
-    :local_iters => 10,
-    :time_scheme => "CN",
-    :time_error_damp => 100.0,
-    :kickrank => 4,
-    :obs => [Ix],  # Norm constraint: Tr[ρ] = const
-)
+time_scheme = "CN"
+workspace = TAMEnWorkspace(ComplexF64)
 
 # Storage for results
 ts_tt = collect(range(0.0, t_end; length=Nsteps + 1))
 pop_tt = zeros(Float64, nsys, length(ts_tt))
-norm_tt = zeros(Float64, length(ts_tt))
-max_rank_tt = zeros(Int, length(ts_tt))
-mean_rank_tt = zeros(Float64, length(ts_tt))
+system_trace_tt = zeros(Float64, length(ts_tt))
+trace_error_tt = zeros(Float64, length(ts_tt))
+rank_history = Vector{Vector{Int}}(undef, length(ts_tt))
 
 # Initial populations
 for k in 1:nsys
-    pop_tt[k, 1] = real(tt_dot(Pop[k], rho0_tt))
+    pop_tt[k, 1] = real(tt_dot(population_observables[k], rho0_tt))
 end
-norm_tt[1] = real(tt_dot(Ix, rho0_tt))
-max_rank_tt[1] = maximum(tt_ranks(rho0_tt))
-mean_rank_tt[1] = mean(tt_ranks(rho0_tt))
+system_trace_tt[1] = real(tt_dot(trace_observable, rho0_tt))
+trace_error_tt[1] = abs(system_trace_tt[1] - 1.0)
+rank_history[1] = collect(tt_ranks(rho0_tt))
 
 println("  Parameters: Nh=$Nh, n_bcf=$n_bcf, nt=$nt, dt=$dt_tt fs, Tfin=$t_end fs")
 println()
-println("  Step |   Time [fs]  |   P₁₁    |   P₂₂    |   Norm   | MaxRank")
-println("  " * "-"^65)
-println("  $(lpad(0, 4)) |  $(lpad(round(ts_tt[1], digits=1), 9))  |  $(lpad(round(pop_tt[1,1], digits=5), 7))  |  $(lpad(round(pop_tt[2,1], digits=5), 7))  |  $(lpad(round(norm_tt[1], digits=5), 7))  |  $(max_rank_tt[1])")
+println("  Step | Time [fs] |   P₁₁   |   P₂₂   | system_trace | trace_error | MaxRank")
+println("  " * "-"^86)
+println("  $(lpad(0, 4)) | $(lpad(round(ts_tt[1], digits=1), 9)) | $(lpad(round(pop_tt[1,1], digits=5), 7)) | $(lpad(round(pop_tt[2,1], digits=5), 7)) | $(lpad(round(system_trace_tt[1], digits=8), 12)) | $(lpad(round(trace_error_tt[1], sigdigits=3), 11)) | $(maximum(rank_history[1]))")
 
-# Scale XOP by time step
-A_step = dt_tt * XOP
-scheme = String(opts[:time_scheme])
+# Scale the Liouvillian by the physical time step
+A_step = dt_tt * liouvillian
 
 u = rho0_tt
 for i in 2:length(ts_tt)
     # tAMEn step
-    U = tkron(u, tt_ones(nt; T=ComplexF64))
-    U, tgrid, _, _ = tamen(U, A_step, tol, opts)
-    u = extract_snapshot(U, tgrid, 1.0, scheme)
-    u = tt_round(u, 1e-10)
-    
+    space_time = tt_kron(u, tt_ones(nt; T=ComplexF64))
+    solution, time_grid, _, _, _ = tamen(
+        space_time,
+        A_step,
+        tol;
+        verb=0,
+        nswp=5,
+        local_iters=10,
+        time_scheme,
+        time_error_damp=100.0,
+        kickrank=4,
+        correct_2_norm=false,
+        conserved_observables=[trace_observable],
+        workspace,
+    )
+    u = extract_snapshot(solution, time_grid, 1.0, time_scheme)
+
     # Compute observables
     for k in 1:nsys
-        pop_tt[k, i] = real(tt_dot(Pop[k], u))
+        pop_tt[k, i] = real(tt_dot(population_observables[k], u))
     end
-    norm_tt[i] = real(tt_dot(Ix, u))
-    max_rank_tt[i] = maximum(tt_ranks(u))
-    mean_rank_tt[i] = mean(tt_ranks(u))
-    
+    system_trace_tt[i] = real(tt_dot(trace_observable, u))
+    trace_error_tt[i] = abs(system_trace_tt[i] - 1.0)
+    rank_history[i] = collect(tt_ranks(u))
+
     # Print progress every 10 steps
     if i % 10 == 0 || i == length(ts_tt)
-        println("  $(lpad(i-1, 4)) |  $(lpad(round(ts_tt[i], digits=1), 9))  |  $(lpad(round(pop_tt[1,i], digits=5), 7))  |  $(lpad(round(pop_tt[2,i], digits=5), 7))  |  $(lpad(round(norm_tt[i], digits=5), 7))  |  $(max_rank_tt[i])")
+        println("  $(lpad(i-1, 4)) | $(lpad(round(ts_tt[i], digits=1), 9)) | $(lpad(round(pop_tt[1,i], digits=5), 7)) | $(lpad(round(pop_tt[2,i], digits=5), 7)) | $(lpad(round(system_trace_tt[i], digits=8), 12)) | $(lpad(round(trace_error_tt[i], sigdigits=3), 11)) | $(maximum(rank_history[i]))")
     end
 end
-println("  " * "-"^65)
+println("  " * "-"^86)
 println("  Done!")
 
 # =============================================
@@ -211,58 +215,42 @@ println("\n" * "=" ^ 60)
 println("Generating comparison plots...")
 println("=" ^ 60)
 
-# Figure 1: Population dynamics comparison
-fig1 = Figure(size=(900, 600))
-ax1 = Axis(fig1[1, 1],
-    xlabel = "Time [fs]",
-    ylabel = "Population",
-    title = "Spin-Boson Ohmic Bath: HEOM-TT vs Standard HEOM\n(λ=$λ cm⁻¹, γ=$γc cm⁻¹, T=$Temp K, Δ=$Δ cm⁻¹)"
+# Population dynamics comparison
+plot_spin_boson_comparison(
+    times_heom,
+    pops_heom,
+    ts_tt,
+    pop_tt;
+    reference_method="HEOM",
+    method="HEOM-TT",
+    xlabel="Time [fs]",
+    title="Spin-Boson Ohmic Bath: HEOM-TT vs Standard HEOM\n(λ=$λ cm⁻¹, γ=$γc cm⁻¹, T=$Temp K, Δ=$Δ cm⁻¹)",
+    filename="sb_ohmic_heomtt_comparison.png",
 )
 
-# Standard HEOM results
-lines!(ax1, times_heom, real.(pops_heom[1, :]), linewidth=3, label="HEOM ρ₁₁", color=:blue)
-lines!(ax1, times_heom, real.(pops_heom[2, :]), linewidth=3, label="HEOM ρ₂₂", color=:red)
-
-# HEOM-TT results
-lines!(ax1, ts_tt, pop_tt[1, :], linewidth=2, linestyle=:dash, label="HEOM-TT ρ₁₁", color=:cyan)
-lines!(ax1, ts_tt, pop_tt[2, :], linewidth=2, linestyle=:dash, label="HEOM-TT ρ₂₂", color=:orange)
-
-axislegend(ax1, position=:rt)
-
-save("sb_ohmic_heomtt_comparison.png", fig1)
-println("  Saved: sb_ohmic_heomtt_comparison.png")
-display(fig1)
-
-# Figure 2: Norm conservation
-fig2 = Figure(size=(600, 400))
-ax2 = Axis(fig2[1, 1],
-    xlabel = "Time [fs]",
-    ylabel = "Tr[ρ]",
-    title = "HEOM-TT Trace Conservation"
+# Physical-system trace conservation
+plot_norm_conservation(
+    ts_tt,
+    system_trace_tt;
+    method="HEOM-TT",
+    target=1.0,
+    quantity="Tr[ρ_sys]",
+    xlabel="Time [fs]",
+    title="HEOM-TT System Trace Conservation Error",
+    filename="sb_ohmic_heomtt_norm.png",
 )
-lines!(ax2, ts_tt, norm_tt, linewidth=2, color=:blue)
-hlines!(ax2, [1.0], linewidth=1, linestyle=:dash, color=:gray)
 
-save("sb_ohmic_heomtt_norm.png", fig2)
-println("  Saved: sb_ohmic_heomtt_norm.png")
-display(fig2)
-
-# Figure 3: TT-rank evolution
-fig3 = Figure(size=(600, 400))
-ax3 = Axis(fig3[1, 1],
-    xlabel = "Time [fs]",
-    ylabel = "TT-rank",
-    title = "HEOM-TT Rank Evolution"
+# TT-rank evolution
+plot_tt_rank_history(
+    ts_tt,
+    rank_history;
+    method="HEOM-TT",
+    xlabel="Time [fs]",
+    title="HEOM-TT Rank Evolution",
+    filename="sb_ohmic_heomtt_rank.png",
 )
-lines!(ax3, ts_tt, max_rank_tt, linewidth=2, label="Max rank", color=:blue)
-lines!(ax3, ts_tt, mean_rank_tt, linewidth=2, label="Mean rank", color=:orange)
-axislegend(ax3, position=:rt)
 
-save("sb_ohmic_heomtt_rank.png", fig3)
-println("  Saved: sb_ohmic_heomtt_rank.png")
-display(fig3)
-
-# Figure 4: BCF fitting
+# BCF fitting
 fig4 = Figure(size=(800, 500))
 ax4 = Axis(fig4[1, 1],
     xlabel = "Time [fs]",
@@ -316,8 +304,8 @@ println("  HEOM-TT:")
 println("    - BCF exponential terms: $n_bcf")
 println("    - Hierarchy truncation per mode: $Nh")
 println("    - Time steps: $(length(ts_tt))")
-println("    - Final max TT-rank: $(max_rank_tt[end])")
-println("    - Norm deviation: $(maximum(abs.(norm_tt .- 1.0)))")
+println("    - Final max TT-rank: $(maximum(rank_history[end]))")
+println("    - Maximum system trace error: $(maximum(trace_error_tt))")
 println()
 println("Simulation completed!")
 println("=" ^ 60)

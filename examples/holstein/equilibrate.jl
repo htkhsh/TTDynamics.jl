@@ -1,3 +1,4 @@
+using LinearAlgebra
 using TTDynamics
 
 isdefined(@__MODULE__, :DEFAULT_CONFIG) || include(joinpath(@__DIR__, "config.jl"))
@@ -12,11 +13,15 @@ const EQUILIBRATION_STATE_FILENAME = "holstein_equilibrium.ttbin"
 const EQUILIBRATION_METADATA_FILENAME = "holstein_equilibrium_metadata.toml"
 const EQUILIBRATION_CSV_FILENAME = "holstein_equilibration.csv"
 const EQUILIBRATION_PLOT_FILENAME = "holstein_equilibration_populations.png"
+const EQUILIBRATION_RANK_PLOT_FILENAME = "holstein_equilibration_ranks.png"
 
 function equilibrate_main(config=DEFAULT_CONFIG;
                           equilibration_time_fs::Real=EQUILIBRATION_TIME_FS,
                           output_directory::AbstractString=EQUILIBRATION_OUTPUT_DIRECTORY)
+    configure_blas(config)
     println("Holstein HEOM-TT equilibration")
+    println("  BLAS threads = $(BLAS.get_num_threads())")
+    println("  bath decomposition = $(config.decomposition_method)")
     decomposition = decompose_bath(config)
     problem = build_problem(config, decomposition)
     println("  step        time_fs   trace_error    max_rank  mean_rank")
@@ -42,6 +47,7 @@ function equilibrate_main(config=DEFAULT_CONFIG;
     metadata_path = joinpath(directory, EQUILIBRATION_METADATA_FILENAME)
     csv_path = joinpath(directory, EQUILIBRATION_CSV_FILENAME)
     plot_path = joinpath(directory, EQUILIBRATION_PLOT_FILENAME)
+    rank_plot_path = joinpath(directory, EQUILIBRATION_RANK_PLOT_FILENAME)
     save_tt_binary(state_path, result.state; overwrite=true)
     metadata = equilibrium_metadata(config, problem, result.state;
                                     equilibration_time_fs)
@@ -50,6 +56,8 @@ function equilibrate_main(config=DEFAULT_CONFIG;
     _ensure_holstein_plotting()
     plotter = Base.invokelatest(getfield, @__MODULE__, :save_equilibration_plot)
     Base.invokelatest(plotter, plot_path, result)
+    rank_plotter = Base.invokelatest(getfield, @__MODULE__, :save_rank_plot)
+    Base.invokelatest(rank_plotter, rank_plot_path, result)
 
     println("  final trace error = $(abs(result.trace[end] - 1))")
     println("  final TT ranks = $(tt_ranks(result.state))")
@@ -57,7 +65,9 @@ function equilibrate_main(config=DEFAULT_CONFIG;
     println("  wrote $state_path")
     println("  wrote $metadata_path")
     println("  wrote $plot_path")
-    return (; result, decomposition, problem, state_path, metadata_path, csv_path, plot_path)
+    println("  wrote $rank_plot_path")
+    return (; result, decomposition, problem, state_path, metadata_path, csv_path,
+            plot_path, rank_plot_path)
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__

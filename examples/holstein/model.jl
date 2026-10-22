@@ -51,13 +51,24 @@ function decompose_bath(config)
         config.brownian_damping_cm,
         config.reorganization_energy_cm,
     )
-    exponents, coefficients = tpsd(
-        spectral_density,
-        config.temperature_K,
-        config.pade_order,
-        config.tpsd_tolerance;
-        pade_type=config.pade_type,
-    )
+    exponents, coefficients = if config.decomposition_method === :tpsd
+        tpsd(
+            spectral_density,
+            config.temperature_K,
+            config.pade_order,
+            config.tpsd_tolerance;
+            pade_type=config.pade_type,
+        )
+    elseif config.decomposition_method === :psd
+        psd(
+            spectral_density,
+            config.temperature_K,
+            config.pade_order;
+            pade_type=config.pade_type,
+        )
+    else
+        throw(ArgumentError("decomposition_method must be :tpsd or :psd"))
+    end
     exponents = ComplexF64.(exponents)
     coefficients = ComplexF64.(coefficients)
     isempty(exponents) && error("Brownian TPSD returned no exponential terms")

@@ -5,6 +5,14 @@ using QFiND
 using TTDynamics
 using TTSolver
 
+function configure_blas(config)
+    threads = config.blas_threads
+    threads isa Integer && threads >= 1 ||
+        throw(ArgumentError("blas_threads must be a positive integer"))
+    BLAS.set_num_threads(threads)
+    return BLAS.get_num_threads()
+end
+
 function step_count(duration_fs::Real, time_step_fs::Real; allow_zero::Bool=false)
     isfinite(duration_fs) && duration_fs >= 0 ||
         throw(ArgumentError("duration_fs must be finite and nonnegative"))
