@@ -37,14 +37,17 @@ end
         if method == :ksl
             trajectory = propagate_ksl(H, initial, times; callback)
         else
+            passed_options = merge(options, Dict(:time_scheme => String(method)))
+            saved_options = deepcopy(passed_options)
             trajectory = propagate_tamen(H, initial, times;
                 temporal_basis_size=5, tolerance=1e-7,
-                options=merge(options, Dict(:time_scheme => String(method))),
+                options=passed_options,
                 workspace=TAMEnWorkspace(ComplexF64), callback)
+            @test passed_options == saved_options
         end
         @test length(trajectory) == length(times)
         @test trajectory[1] === initial
-        @test events == [(0, 1.2), (1, 1.2), (2, 1.35), (3, 1.7)]
+        @test events == [(0, 1.2), (2, 1.35), (3, 1.7)]
         for (time, state) in zip(times, trajectory)
             phase = (time^2 - times[1]^2) / 2
             expected = ComplexF64[cos(phase), -1im * sin(phase)]
@@ -53,6 +56,45 @@ end
     end
     @test X.cores == saved
     @test !haskey(options, :time_scheme)
+end
+
+struct LinearHamiltonianDrive
+    slope::Float64
+end
+(drive::LinearHamiltonianDrive)(time) = drive.slope * time
+
+@testset "real inputs and a driven operator with internal TT rank" begin
+    X = [0.0 1.0; 1.0 0.0]
+    Z = [1.0 0.0; 0.0 -1.0]
+    I2 = Matrix{Float64}(I, 2, 2)
+    operator = tt_mkron(X, I2) + 0.2 * tt_mkron(Z, Z)
+    H = TimeDependentHamiltonian([LinearHamiltonianDrive(0.5) => operator])
+    initial = TTTensor([reshape(I2 / sqrt(2), 1, 2, 2), reshape(I2, 2, 2, 1)])
+    saved_state, saved_operator = deepcopy(initial.cores), deepcopy(operator.cores)
+    expected = exp(-0.25im * (1.3^2 - 1.0^2) * (kron(X, I2) + 0.2 * kron(Z, Z))) *
+               [1.0, 0.0, 0.0, 1.0] / sqrt(2)
+    for propagate in (propagate_ksl, propagate_tamen)
+        states = propagate == propagate_ksl ? propagate(H, initial, [1.0, 1.3]) :
+            propagate(H, initial, [1.0, 1.3]; temporal_basis_size=5, tolerance=1e-7,
+                options=Dict(:verb => 0, :nswp => 6, :local_iters => 20, :correct_2_norm => false))
+        @test vec(tt_full(last(states))) ≈ expected atol=2e-6
+    end
+    @test initial.cores == saved_state
+    @test operator.cores == saved_operator
+end
+
+@testset "adaptive tAMEn resamples absolute time coefficients" begin
+    samples = Float64[]
+    coefficient = time -> (push!(samples, time); cos(3time))
+    H = TimeDependentHamiltonian([coefficient => tt_matrix(ComplexF64[0 1; 1 0])])
+    initial = tt_unit([2], 1; T=ComplexF64)
+    states = propagate_tamen(H, initial, [1.2, 1.7]; temporal_basis_size=3,
+        tolerance=1e-5, options=Dict(:verb => 0, :nswp => 5, :local_iters => 15,
+                                   :time_error_damp => 10, :correct_2_norm => false))
+    @test all(time -> 1.2 <= time <= 1.7, samples)
+    @test length(unique(samples)) > 3
+    phase = (sin(3 * 1.7) - sin(3 * 1.2)) / 3
+    @test vec(tt_full(last(states))) ≈ ComplexF64[cos(phase), -im * sin(phase)] atol=5e-5
 end
 
 @testset "constant and zero Hamiltonian propagation" begin

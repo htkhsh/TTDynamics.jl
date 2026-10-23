@@ -39,6 +39,9 @@ export PhysicalQuantity,
        BosonicEnv,
        SBSystem,
        tt_sbham,
+       TimeDependentHamiltonian,
+       propagate_ksl,
+       propagate_tamen,
        # HEOM-TT
        HEOMTTSystem,
        CorrelationFitMetadata,
@@ -80,6 +83,7 @@ include("multicore_heom.jl")
 include("multicore_states.jl")
 include("multicore_redfield.jl")
 include("tamen_propagation.jl")
+include("time_dependent_propagation.jl")
 include("tt_io.jl")
 
 end

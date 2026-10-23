@@ -243,6 +243,62 @@ Returns:
 - `Ix`: Trace operator (TTTensor)
 - `Pop`: Population operators (Vector{TTTensor})
 
+### Time-dependent Schrödinger propagation
+
+`TimeDependentHamiltonian(H0, terms)` represents
+`H(t) = H0 + sum(f(t) * V for (f, V) in terms)`. Each term is a
+`coefficient => operator` pair, with a scalar-valued callable coefficient
+and a square `TTMatrix`. Operators are copied into `ComplexF64` TT cores,
+and all operators must have the same local dimensions.
+Coefficients receive absolute physical time, including when the initial
+time is nonzero. Units must be chosen so that `H * time` is dimensionless
+(`ħ = 1`).
+
+```julia
+X = tt_matrix(ComplexF64[0 1; 1 0])
+Z = tt_matrix(ComplexF64[1 0; 0 -1])
+H = TimeDependentHamiltonian(0.3 * Z, [(t -> cos(2t)) => X])
+
+# A purely driven Hamiltonian needs no explicit zero TTMatrix:
+H_driven = TimeDependentHamiltonian([(t -> cos(2t)) => X])
+# Equivalently: TimeDependentHamiltonian(0, [(t -> cos(2t)) => X])
+
+initial = tt_unit([2], 1; T=ComplexF64)
+times = 1.0:0.01:2.0
+states_ksl = propagate_ksl(H_driven, initial, times)
+states_tamen = propagate_tamen(H_driven, initial, times;
+    temporal_basis_size=5, tolerance=1e-8,
+    options=Dict(:verb => 0, :time_scheme => "cheb"))
+```
+
+Both functions solve `dψ/dt = -im * H(t) * ψ` and return one `TTTensor`
+per requested time, starting with the supplied initial state. They also
+accept a constant `TTMatrix` directly. Time grids must be nonempty, finite,
+and nondecreasing; repeated times reuse the current state. A
+`callback(step, time, state)` is called at the initial time (`step = 0`)
+and after each nonzero interval.
+
+`propagate_ksl` evaluates `H` at the interval midpoint and calls
+`TTSolver.tt_ksl`, handling its generator sign internally. With the default
+`symmetric=true`, this gives second-order time stepping for smooth
+Hamiltonians, subject to TT rank and local solver accuracy. Keywords are
+`tolerance=1e-12`, `rmax=typemax(Int)`, `symmetric=true`,
+`expmethod=:krylov`, and `krylov_m=30`. KSL does not enrich the initial TT
+ranks; choose an initial state representation with sufficient ranks when
+the dynamics generates entanglement.
+
+`propagate_tamen` keeps the spatial operators separated and samples each
+coefficient at the solver's current time nodes, including after adaptive
+subdivision. The time mode is a diagonal coefficient matrix; the full
+spatial Hamiltonian is never expanded into a dense matrix. Keywords are
+`temporal_basis_size=3`, `tolerance=1e-8`, `state_tolerance=1e-12`,
+`options=Dict{Symbol,Any}()`, `conserved_observables=nothing`, and
+`workspace=nothing`. The existing tAMEn `"cheb"` and `"cn"` schemes are
+supported; CN requires an odd temporal basis size of at least three.
+`options` is copied before each solve. A `TAMEnWorkspace(ComplexF64)` can
+be passed to reuse solver scratch storage. `H(t)` evaluates a separated
+Hamiltonian as a spatial `TTMatrix`, which is also useful for observables.
+
 #### tAMEn propagation and conserved observables
 
 `propagate_heom_tamen`, `propagate_multicore_heom_tamen`, and

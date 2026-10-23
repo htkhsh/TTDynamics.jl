@@ -12,6 +12,7 @@ Tensor-Train methods for open quantum system dynamics.
 - **TT Operators**: Local operators, identity, sums
 - **TFD-TT**: Thermo-Field Dynamics in TT format
 - **HEOM-TT**: Hierarchical Equations of Motion in TT format
+- **Time-dependent propagation**: Separated Hamiltonians with KSL and tAMEn
 
 ## Quick Start
 
@@ -28,15 +29,14 @@ hsys = 0.5 * ε * σz + Δ * σx
 sys = SBSystem(hsys, ω, g, σz)
 
 # Build Hamiltonian (basis sizes auto-estimated)
-H_tt, basis_sizes = build_sbham(sys; unit_conv=icm2ifs)
+H_tt, basis_sizes = tt_sbham(sys; unit_conv=icm2ifs)
 
 # Initial state |↑⟩ ⊗ |0,0,...⟩
 spaces = vcat([2], basis_sizes)
-psi0 = initial_tt_state(spaces; state_index=1, site=1)
+psi0 = localized_tt_state(spaces)
 
 # Time evolution with tAMEn
-A = -1im * H_tt
-psi_t = tamen(A, psi0, ts; opts...)
+psi_t = propagate_tamen(H_tt, psi0, ts; options=Dict(:verb => 0))
 ```
 
 ## Contents

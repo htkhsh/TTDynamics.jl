@@ -16,8 +16,8 @@ include(joinpath(@__DIR__, "..", "examples", "holstein", "utils.jl"))
     @test DEFAULT_CONFIG.site_count == length(DEFAULT_CONFIG.site_energies_cm)
     @test DEFAULT_CONFIG.equilibration_tamen_tolerance == 1e-2
     @test DEFAULT_CONFIG.correlation_tamen_tolerance == 2e-2
-    @test DEFAULT_CONFIG.blas_threads == 1
-    @test DEFAULT_CONFIG.decomposition_method == :tpsd
+    @test DEFAULT_CONFIG.blas_threads == 8
+    @test DEFAULT_CONFIG.decomposition_method == :psd
     @test !(:tamen_tolerance in propertynames(DEFAULT_CONFIG))
     @test !(:final_time_fs in propertynames(DEFAULT_CONFIG))
     @test !(:validation_final_time_fs in propertynames(DEFAULT_CONFIG))
@@ -28,10 +28,14 @@ end
 
 @testset "BLAS thread configuration" begin
     previous = BLAS.get_num_threads()
-    @test configure_blas(DEFAULT_CONFIG) == 1
-    @test BLAS.get_num_threads() == 1
-    @test_throws ArgumentError configure_blas(merge(DEFAULT_CONFIG, (blas_threads=0,)))
-    BLAS.set_num_threads(previous)
+    try
+        single_thread_config = merge(DEFAULT_CONFIG, (blas_threads=1,))
+        @test configure_blas(single_thread_config) == 1
+        @test BLAS.get_num_threads() == 1
+        @test_throws ArgumentError configure_blas(merge(DEFAULT_CONFIG, (blas_threads=0,)))
+    finally
+        BLAS.set_num_threads(previous)
+    end
 end
 
 @testset "Holstein compact model" begin
@@ -41,6 +45,7 @@ end
         pade_order=1,
         hierarchy_local_size=2,
         operator_tolerance=1e-8,
+        decomposition_method=:tpsd,
     ))
     hamiltonian = holstein_hamiltonian(config)
     @test size(hamiltonian) == (2, 2)

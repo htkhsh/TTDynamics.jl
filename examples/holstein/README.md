@@ -32,11 +32,11 @@ The solver tolerances are independent: use
 two calculations separately.
 
 Set `blas_threads` in the configuration to control the process-wide BLAS
-thread count. The default is `1`; this avoids oversubscription with Julia/TT
-work. `BLAS.set_num_threads` is applied at the beginning of each entry point.
+thread count. The default is `8`. `BLAS.set_num_threads` is applied at the
+beginning of each entry point.
 
-Set `decomposition_method` to `:tpsd` (default) or `:psd` to select QFiND's
-truncated or full Padé spectral decomposition. `tpsd_tolerance` is used only
+Set `decomposition_method` to `:psd` (default) or `:tpsd` to select QFiND's
+full or truncated Padé spectral decomposition. `tpsd_tolerance` is used only
 for `:tpsd`.
 
 tAMEn propagation prints step, time, trace error/correlation, and TT-rank
