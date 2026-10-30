@@ -7,11 +7,9 @@ isdefined(@__MODULE__, :DEFAULT_CONFIG) || include(joinpath(@__DIR__, "config.jl
 isdefined(@__MODULE__, :build_problem) || include(joinpath(@__DIR__, "model.jl"))
 isdefined(@__MODULE__, :run_equilibration) || include(joinpath(@__DIR__, "utils.jl"))
 
-const PEIERLS_OUTPUT_DIRECTORY = joinpath(@__DIR__, "output")
-
 function equilibrate_main(config=DEFAULT_CONFIG;
                           equilibration_time_fs::Real=EQUILIBRATION_TIME_FS,
-                          output_directory::AbstractString=PEIERLS_OUTPUT_DIRECTORY)
+                          output_directory::Union{Nothing,AbstractString}=nothing)
     configure_blas(config)
     println("Peierls HEOM-TT equilibration")
     println("  BLAS threads = $(BLAS.get_num_threads())")
@@ -30,7 +28,10 @@ function equilibrate_main(config=DEFAULT_CONFIG;
                     "$(lpad(round(observation.mean_rank; digits=2), 9))")
         end)
 
-    directory = String(output_directory)
+    configured_directory = String(config.output_directory)
+    directory = output_directory === nothing ?
+        (isabspath(configured_directory) ? configured_directory : joinpath(@__DIR__, configured_directory)) :
+        String(output_directory)
     mkpath(directory)
     state_path = joinpath(directory, "peierls_equilibrium.ttbin")
     metadata_path = joinpath(directory, "peierls_equilibrium_metadata.toml")

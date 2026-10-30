@@ -13,6 +13,30 @@ function configure_blas(config)
     return BLAS.get_num_threads()
 end
 
+function print_run_parameters(config, output_directory::AbstractString;
+                              duration_label::AbstractString,
+                              duration_fs::Real)
+    println("  output directory = $output_directory")
+    println("  physical parameters:")
+    println("    site count = $(config.site_count)")
+    println("    site energies = $(config.site_energies_cm) cm⁻¹")
+    println("    hopping = $(config.hopping_cm) cm⁻¹")
+    println("    Brownian frequency = $(config.brownian_frequency_cm) cm⁻¹")
+    println("    Brownian damping = $(config.brownian_damping_cm) cm⁻¹")
+    println("    reorganization energy = $(config.reorganization_energy_cm) cm⁻¹")
+    println("    Fröhlich interaction range = $(config.frohlich_range)")
+    println("    temperature = $(config.temperature_K) K")
+    println("    initial condition = $(config.initial_condition)")
+    println("    initial site = $(config.initial_site)")
+    println("  run settings:")
+    println("    $duration_label = $duration_fs fs")
+    println("    time step = $(config.time_step_fs) fs")
+    println("    hierarchy local size = $(config.hierarchy_local_size)")
+    println("    bath decomposition = $(config.decomposition_method)")
+    println("    BLAS threads = $(BLAS.get_num_threads())")
+    return nothing
+end
+
 function step_count(duration_fs::Real, time_step_fs::Real; allow_zero::Bool=false)
     isfinite(duration_fs) && duration_fs >= 0 || throw(ArgumentError("duration_fs must be finite and nonnegative"))
     isfinite(time_step_fs) && time_step_fs > 0 || throw(ArgumentError("time_step_fs must be finite and positive"))
@@ -99,6 +123,7 @@ function measure_density(state::TTTensor, problem)
     pairs = [(row, column) for row in 1:(size(density, 1) - 1) for column in (row + 1):size(density, 2)]
     ranks = tt_ranks(state)
     return (; populations=real.(diag(density)), coherence_pairs=pairs,
+            electron_lattice=electron_lattice_correlation(state, problem.system),
             coherences=ComplexF64[density[row, column] for (row, column) in pairs],
             trace=real(tt_dot(problem.trace_observable, state)),
             maximum_rank=maximum(ranks), mean_rank=mean(ranks))
@@ -106,12 +131,31 @@ end
 
 function _observations_to_result(observations, times)
     return (; times,
+            lattice_distances=first(observations).electron_lattice.distances,
+            electron_lattice_correlation=hcat([o.electron_lattice.correlation for o in observations]...),
+            electron_lattice_uncentered_correlation=hcat([o.electron_lattice.uncentered_correlation for o in observations]...),
+            bath_mean=hcat([o.electron_lattice.bath_mean for o in observations]...),
             populations=hcat([o.populations for o in observations]...),
             coherence_pairs=first(observations).coherence_pairs,
             coherences=hcat([o.coherences for o in observations]...),
             trace=[o.trace for o in observations],
             maximum_rank=[o.maximum_rank for o in observations],
             mean_rank=[o.mean_rank for o in observations])
+end
+
+function write_electron_lattice_correlation_csv(path::AbstractString, result;
+                                               overwrite::Bool=true)
+    !overwrite && ispath(path) && throw(ArgumentError("target already exists: $path"))
+    open(String(path), "w") do io
+        println(io, "time_fs,distance,correlation_real_fs^-1,correlation_imag_fs^-1,uncentered_real_fs^-1,uncentered_imag_fs^-1")
+        for time in eachindex(result.times), (index, distance) in pairs(result.lattice_distances)
+            connected = result.electron_lattice_correlation[index, time]
+            uncentered = result.electron_lattice_uncentered_correlation[index, time]
+            println(io, join((result.times[time], distance, real(connected), imag(connected),
+                              real(uncentered), imag(uncentered)), ","))
+        end
+    end
+    return String(path)
 end
 
 function run_equilibration(config, problem; duration_fs::Real,
@@ -165,16 +209,62 @@ function run_current_correlation(equilibrium_state::TTTensor, config, problem;
             maximum_rank, mean_rank, state)
 end
 
+function _equilibrium_physical_parameters(config)
+    parameters = Dict{String,Any}(
+        "site_count" => Int(config.site_count),
+        "site_energies_cm" => Float64.(config.site_energies_cm),
+        "hopping_cm" => Float64(config.hopping_cm),
+        "brownian_frequency_cm" => Float64(config.brownian_frequency_cm),
+        "brownian_damping_cm" => Float64(config.brownian_damping_cm),
+        "reorganization_energy_cm" => Float64(config.reorganization_energy_cm),
+        "frohlich_range" => Float64(config.frohlich_range),
+        "temperature_K" => Float64(config.temperature_K),
+        "initial_condition" => String(config.initial_condition),
+        "initial_site" => Int(config.initial_site),
+        "decomposition_method" => String(config.decomposition_method),
+        "pade_order" => Int(config.pade_order),
+    )
+    config.pade_order > 0 && (parameters["pade_type"] = String(config.pade_type))
+    config.decomposition_method === :tpsd &&
+        (parameters["tpsd_tolerance"] = Float64(config.tpsd_tolerance))
+    return parameters
+end
+
 function equilibrium_metadata(config, problem, state; equilibration_time_fs::Real)
     return Dict(
         "identifier" => "TTDynamics Lattice Frohlich HEOM-TT equilibrium",
-        "version" => 1,
+        "version" => 2,
         "site_count" => config.site_count,
         "initial_condition" => String(config.initial_condition),
+        "physical_parameters" => _equilibrium_physical_parameters(config),
         "equilibration_time_fs" => Float64(equilibration_time_fs),
         "hierarchy_sizes" => Int.(problem.system.nb),
         "tt_dimensions" => Int.(tt_dims(state)),
     )
+end
+
+function _validate_equilibrium_physical_parameters(metadata, config)
+    version = get(metadata, "version", nothing)
+    saved_parameters = get(metadata, "physical_parameters", nothing)
+    if version != 2 || !(saved_parameters isa AbstractDict)
+        @warn "equilibrium checkpoint has no comparable physical-parameter metadata; continuing without physical consistency checks" metadata_version=version
+        return false
+    end
+    expected_parameters = _equilibrium_physical_parameters(config)
+    mismatches = String[]
+    for key in sort!(collect(union(keys(saved_parameters), keys(expected_parameters))))
+        if !haskey(saved_parameters, key) || !haskey(expected_parameters, key) ||
+           !isequal(saved_parameters[key], expected_parameters[key])
+            saved = get(saved_parameters, key, "<missing>")
+            current = get(expected_parameters, key, "<missing>")
+            push!(mismatches, "$key (saved=$(repr(saved)), current=$(repr(current)))")
+        end
+    end
+    isempty(mismatches) || throw(ArgumentError(
+        "equilibrium physical parameters differ from current config: " *
+        join(mismatches, "; ") * ". Rerun equilibration before correlation calculation",
+    ))
+    return true
 end
 
 write_equilibrium_metadata(path::AbstractString, metadata; overwrite::Bool=true) = begin
@@ -184,13 +274,14 @@ write_equilibrium_metadata(path::AbstractString, metadata; overwrite::Bool=true)
 end
 read_equilibrium_metadata(path::AbstractString) = TOML.parsefile(String(path))
 
-function validate_equilibrium_metadata(metadata, config, problem, state)
+function validate_equilibrium_metadata(metadata, config, problem, state;
+                                       physical_parameters_checked::Bool=false)
     required = ("identifier", "version", "site_count", "initial_condition",
                 "equilibration_time_fs", "hierarchy_sizes", "tt_dimensions")
     all(key -> haskey(metadata, key), required) ||
         throw(ArgumentError("equilibrium metadata is missing a required key"))
     metadata["identifier"] == "TTDynamics Lattice Frohlich HEOM-TT equilibrium" || throw(ArgumentError("equilibrium metadata identifier does not match"))
-    metadata["version"] == 1 || throw(ArgumentError("unsupported equilibrium metadata version"))
+    physical_parameters_checked || _validate_equilibrium_physical_parameters(metadata, config)
     metadata["site_count"] == config.site_count || throw(DimensionMismatch("equilibrium site_count does not match config"))
     metadata["initial_condition"] == String(config.initial_condition) || throw(ArgumentError("equilibrium initial_condition does not match config"))
     Int.(metadata["hierarchy_sizes"]) == Int.(problem.system.nb) || throw(DimensionMismatch("equilibrium hierarchy sizes do not match problem"))

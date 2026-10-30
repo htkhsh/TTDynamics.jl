@@ -17,6 +17,8 @@ diagnostics, a population/coherence plot, and an equilibration-rank plot to
 `examples/holstein/output/`.
 The second command reloads that state, checks its layout against the current
 configuration, and writes the current correlation and rank plots.
+Set `output_directory` in `config.jl` to change the directory; relative paths
+are resolved from `examples/holstein/`. The default is `"output"`.
 
 The default initial state is localized on `initial_site`. Use a merged
 `NamedTuple` to select the bare electronic Gibbs state:
@@ -50,7 +52,61 @@ performed. Equilibration reports every site population, every unique
 site-pair coherence, the trace, and maximum/mean TT rank.
 
 The current source is `J ρ_eq`, and the reported unsymmetrized correlation is
-`Tr[J exp(L t)(J ρ_eq)]`. The metadata intentionally contains only the state
-identity, initial-condition choice, equilibration duration, hierarchy sizes,
-and TT dimensions. If those physical inputs change, rerun equilibration before
-running the correlation script.
+`Tr[J exp(L t)(J ρ_eq)]`. Equilibrium metadata records the Hamiltonian, bath,
+temperature, and spectral-decomposition parameters. The correlation script
+checks them against the current config and reports every mismatch before
+building the correlation problem. For older checkpoints without this metadata,
+the script warns and continues without that physical-parameter check. The
+correlation time step may still be changed independently because it is not a
+physical parameter.
+To overlay the saved `N=11`, `N=15`, and `N=19` current correlations, run
+`julia --project=examples/holstein examples/holstein/plot_current_correlation_sizes.jl`.
+The comparison is written to `examples/holstein/output-n19/`.
+
+## Equal-time electron–lattice correlation
+
+`equilibrate.jl` also measures, at every time step including the initial state,
+
+```text
+C_nB(r,t) = sum_j [<n_j(t) B_((j+r) mod N)(t)> - <n_j(t)><B_((j+r) mod N)(t)>]
+```
+
+All directed periodic distances `r = 0,...,N-1` are retained; there is no
+division by `N`. `B_l` is the bath coordinate in `H_int = sum_l n_l B_l`,
+including its coupling strength. Its unit, and that of `C_nB`, is `fs^-1`.
+Multiply by `1 / HEOMKit.icm2ifs` to express values in `cm^-1`; this is not
+a bare dimensionless phonon displacement.
+
+The first-tier ADO contribution is
+`R_l = sum_(k in bath l) sqrt(noise.abs_coeff[k]) * rho[e_k]`.
+Both the joint moment `R_l[j,j]` and bath mean `Tr(R_l)` are divided by
+the root trace before subtracting the disconnected contribution. Thus a
+factorized state gives zero even with a nonzero bath mean. All hierarchy
+local sizes must be at least two.
+
+The configured output directory gains `holstein_electron_lattice_correlation.csv`
+and `holstein_electron_lattice_correlation.png`. The CSV contains one row per
+`(time_fs, distance)`, with real and imaginary connected and uncentered
+correlations. The plot shows the real connected correlation as a heatmap.
+The additional `holstein_electron_lattice_correlation_r0_r1_r2.png` overlays
+the real time traces for `r=0`, `r=1`, and `r=2`. The CSV retains the
+imaginary parts for numerical diagnostics.
+The returned equilibration result contains `lattice_distances`,
+`electron_lattice_correlation` and `electron_lattice_uncentered_correlation`
+(distance × time), and `bath_mean` (bath × time).
+
+A saved physical HEOM state can be measured without propagation:
+
+```julia
+include("examples/holstein/equilibrate.jl")
+decomposition = decompose_bath(DEFAULT_CONFIG)
+problem = build_problem(DEFAULT_CONFIG, decomposition)
+state = load_tt_binary(joinpath("examples/holstein", DEFAULT_CONFIG.output_directory,
+                               "holstein_equilibrium.ttbin"))
+measurement = electron_lattice_correlation(state, problem.system)
+measurement.correlation  # entries correspond to measurement.distances
+```
+
+Use the same model and bath decomposition as the checkpoint. This observable
+uses the physical density trajectory from equilibration; the `J rho_eq`
+trajectory in `current_correlation.jl` computes a different correlation.

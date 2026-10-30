@@ -8,7 +8,6 @@ isdefined(@__MODULE__, :run_current_correlation) || include(joinpath(@__DIR__, "
 _ensure_holstein_plotting() = isdefined(@__MODULE__, :save_current_plot) ||
                               include(joinpath(@__DIR__, "plotting.jl"))
 
-const CORRELATION_OUTPUT_DIRECTORY = joinpath(@__DIR__, "output")
 const CORRELATION_STATE_FILENAME = "holstein_equilibrium.ttbin"
 const CORRELATION_METADATA_FILENAME = "holstein_equilibrium_metadata.toml"
 const CORRELATION_CSV_FILENAME = "holstein_current_correlation.csv"
@@ -17,22 +16,28 @@ const CORRELATION_RANK_PLOT_FILENAME = "holstein_current_correlation_ranks.png"
 
 function current_correlation_main(config=DEFAULT_CONFIG;
                                   correlation_time_fs::Real=CORRELATION_TIME_FS,
-                                  output_directory::AbstractString=CORRELATION_OUTPUT_DIRECTORY)
+                                  output_directory::Union{Nothing,AbstractString}=nothing)
     configure_blas(config)
     println("Holstein HEOM-TT current correlation")
-    println("  BLAS threads = $(BLAS.get_num_threads())")
-    println("  bath decomposition = $(config.decomposition_method)")
-    directory = String(output_directory)
+    configured_directory = String(config.output_directory)
+    directory = output_directory === nothing ?
+        (isabspath(configured_directory) ? configured_directory : joinpath(@__DIR__, configured_directory)) :
+        String(output_directory)
+    print_run_parameters(config, directory;
+                         duration_label="correlation duration",
+                         duration_fs=correlation_time_fs)
     state_path = joinpath(directory, CORRELATION_STATE_FILENAME)
     metadata_path = joinpath(directory, CORRELATION_METADATA_FILENAME)
     isfile(state_path) || throw(ArgumentError("missing equilibrium state: $state_path"))
     isfile(metadata_path) || throw(ArgumentError("missing equilibrium metadata: $metadata_path"))
 
+    metadata = read_equilibrium_metadata(metadata_path)
+    physical_parameters_checked = _validate_equilibrium_physical_parameters(metadata, config)
     decomposition = decompose_bath(config)
     problem = build_problem(config, decomposition)
     state = load_tt_binary(state_path)
-    metadata = read_equilibrium_metadata(metadata_path)
-    validate_equilibrium_metadata(metadata, config, problem, state)
+    validate_equilibrium_metadata(metadata, config, problem, state;
+                                  physical_parameters_checked)
     println("  step        time_fs       correlation                 max_rank  mean_rank")
     result = run_current_correlation(
         state,

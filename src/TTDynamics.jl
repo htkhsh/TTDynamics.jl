@@ -47,6 +47,7 @@ export PhysicalQuantity,
        liouville_left,
        liouville_right,
        root_density_matrix,
+       electron_lattice_correlation,
        build_heom_liouvillian,
        build_heom_left_action,
        build_heom_bath_coordinate_left_action,
@@ -75,6 +76,7 @@ include("tt_states.jl")
 include("util.jl")
 include("tfd.jl")
 include("heom.jl")
+include("heom_observables.jl")
 include("correlation.jl")
 include("multicore_heom.jl")
 include("multicore_states.jl")

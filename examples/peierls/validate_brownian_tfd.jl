@@ -225,11 +225,11 @@ function run_brownian_tfd_validation(; duration_fs::Real=100.0,
                                      damping_cm::Real=50.0,
                                      reorganization_energy_cm::Real=50.0,
                                      temperature_K::Real=100.0,
-                                     identification_tolerance::Real=1e-2,
+                                     identification_tolerance::Real=1e-3,
                                      hierarchy_local_size::Integer=20,
                                      boson_size::Integer=50,
-                                     heom_tamen_tolerance::Real=1e-2,
-                                     tfd_tamen_tolerance::Real=1e-3)
+                                     heom_tamen_tolerance::Real=2e-3,
+                                     tfd_tamen_tolerance::Real=2e-3)
     config = brownian_validation_config(; temperature_K,
         hierarchy_local_size, reorganization_energy_cm,
         heom_tamen_tolerance, tfd_tamen_tolerance)
@@ -237,8 +237,8 @@ function run_brownian_tfd_validation(; duration_fs::Real=100.0,
     bath = discretize_brownian_bath(
         frequency_cm=frequency_cm, damping_cm=damping_cm,
         reorganization_energy_cm=reorganization_energy_cm,
-        temperature_K=temperature_K, omega_min_cm=-500.0,
-        omega_max_cm=700.0, n_frequency=1000,
+        temperature_K=temperature_K, omega_min_cm=-1000.0,
+        omega_max_cm=1500.0, n_frequency=2000,
         identification_time_fs=duration_fs, n_time=200,
         identification_tolerance=identification_tolerance,
     )
@@ -289,7 +289,7 @@ function save_brownian_tfd_plot(path::AbstractString, result)
     return String(path)
 end
 
-function brownian_tfd_main()
+function brownian_tfd_main(config=DEFAULT_CONFIG)
     println("Peierls Brownian bath: HEOM-TAMEn vs TFD-tAMEn")
     result = run_brownian_tfd_validation()
     println("  Brownian modes from QFiND ID: $(length(result.bath.frequencies_cm))")
@@ -297,7 +297,9 @@ function brownian_tfd_main()
     println("  Brownian HEOM exponential terms: $(length(result.decomposition.exponents))")
     println("  TFD local boson dimensions: $(result.tfd_model.basis_sizes)")
     println("  max |HEOM-TAMEn - TFD-tAMEn| = $(result.maximum_difference)")
-    output_directory = joinpath(@__DIR__, "output")
+    configured_directory = String(config.output_directory)
+    output_directory = isabspath(configured_directory) ?
+        configured_directory : joinpath(@__DIR__, configured_directory)
     mkpath(output_directory)
     output_path = joinpath(output_directory, "peierls_brownian_tfd.png")
     save_brownian_tfd_plot(output_path, result)

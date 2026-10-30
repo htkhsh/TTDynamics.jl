@@ -9,7 +9,6 @@ _ensure_lattice_frohlich_plotting() =
     isdefined(@__MODULE__, :save_current_plot) ||
     include(joinpath(@__DIR__, "plotting.jl"))
 
-const CORRELATION_OUTPUT_DIRECTORY = joinpath(@__DIR__, "output")
 const CORRELATION_CSV_FILENAME = "lattice_frohlich_current_correlation.csv"
 const CORRELATION_PLOT_FILENAME = "lattice_frohlich_current_correlation.png"
 const CORRELATION_RANK_PLOT_FILENAME = "lattice_frohlich_current_correlation_ranks.png"
@@ -18,20 +17,27 @@ const CORRELATION_METADATA_FILENAME = "lattice_frohlich_equilibrium_metadata.tom
 
 function current_correlation_main(config=DEFAULT_CONFIG;
                                   correlation_time_fs::Real=CORRELATION_TIME_FS,
-                                  output_directory::AbstractString=CORRELATION_OUTPUT_DIRECTORY)
+                                  output_directory::Union{Nothing,AbstractString}=nothing)
     configure_blas(config)
     println("Lattice Fröhlich HEOM-TT current correlation")
-    println("  BLAS threads = $(BLAS.get_num_threads())")
-    println("  bath decomposition = $(config.decomposition_method)")
-    directory = String(output_directory)
+    configured_directory = String(config.output_directory)
+    directory = output_directory === nothing ?
+        (isabspath(configured_directory) ? configured_directory : joinpath(@__DIR__, configured_directory)) :
+        String(output_directory)
+    print_run_parameters(config, directory;
+                         duration_label="correlation duration",
+                         duration_fs=correlation_time_fs)
     state_path = joinpath(directory, CORRELATION_STATE_FILENAME)
     metadata_path = joinpath(directory, CORRELATION_METADATA_FILENAME)
     isfile(state_path) || throw(ArgumentError("missing equilibrium state: $state_path"))
     isfile(metadata_path) || throw(ArgumentError("missing equilibrium metadata: $metadata_path"))
+    metadata = read_equilibrium_metadata(metadata_path)
+    physical_parameters_checked = _validate_equilibrium_physical_parameters(metadata, config)
     decomposition = decompose_bath(config)
     problem = build_problem(config, decomposition)
     state = load_tt_binary(state_path)
-    validate_equilibrium_metadata(read_equilibrium_metadata(metadata_path), config, problem, state)
+    validate_equilibrium_metadata(metadata, config, problem, state;
+                                  physical_parameters_checked)
     println("  step        time_fs       correlation                 max_rank  mean_rank")
     result = run_current_correlation(state, config, problem; duration_fs=correlation_time_fs,
         progress_callback=p -> println("  $(lpad(p.step, 4))  $(lpad(round(p.time_fs; digits=3), 10))  " *

@@ -39,11 +39,22 @@ function peierls_couplings(site_count::Integer)
 end
 
 function decompose_bath(config)
-    config.drude_cutoff_cm > 0 || throw(ArgumentError("drude_cutoff_cm must be positive"))
     config.reorganization_energy_cm > 0 ||
         throw(ArgumentError("reorganization_energy_cm must be positive"))
-    spectral_density = DrudeSD(config.drude_cutoff_cm,
-                               config.reorganization_energy_cm)
+    spectral_density = if config.bath_model === :brownian
+        config.brownian_frequency_cm > 0 ||
+            throw(ArgumentError("brownian_frequency_cm must be positive"))
+        config.brownian_damping_cm > 0 ||
+            throw(ArgumentError("brownian_damping_cm must be positive"))
+        BrownianSD(config.brownian_frequency_cm, config.brownian_damping_cm,
+                   config.reorganization_energy_cm)
+    elseif config.bath_model === :drude
+        config.drude_cutoff_cm > 0 ||
+            throw(ArgumentError("drude_cutoff_cm must be positive"))
+        DrudeSD(config.drude_cutoff_cm, config.reorganization_energy_cm)
+    else
+        throw(ArgumentError("bath_model must be :brownian or :drude"))
+    end
     exponents, coefficients = if config.decomposition_method === :tpsd
         tpsd(spectral_density, config.temperature_K, config.pade_order,
              config.tpsd_tolerance; pade_type=config.pade_type)
@@ -55,10 +66,12 @@ function decompose_bath(config)
     end
     exponents = ComplexF64.(exponents)
     coefficients = ComplexF64.(coefficients)
-    isempty(exponents) && error("Drude decomposition returned no exponential terms")
+    bath_name = String(config.bath_model)
+    isempty(exponents) && error("$bath_name decomposition returned no exponential terms")
     all(isfinite, exponents) && all(>(0), real.(exponents)) ||
-        error("Drude decomposition returned invalid exponents")
-    all(isfinite, coefficients) || error("Drude decomposition returned invalid coefficients")
+        error("$bath_name decomposition returned invalid exponents")
+    all(isfinite, coefficients) ||
+        error("$bath_name decomposition returned invalid coefficients")
     return (; exponents, coefficients)
 end
 

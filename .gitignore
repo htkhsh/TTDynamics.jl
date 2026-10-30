@@ -10,3 +10,5 @@
 /docs/build/
 /ref/
 /.worktrees/
+*.png
+*.csv

@@ -25,6 +25,8 @@ Equilibration writes a TT checkpoint, metadata, CSV diagnostics, and a plot.
 It also writes a separate equilibration-rank plot.
 The correlation stage reloads the checkpoint and writes the current
 correlation and rank diagnostics. Both stages use `output/` by default.
+Set `output_directory` in `config.jl` to change the directory; relative paths
+are resolved from `examples/lattice_frohlich/`.
 
 ## Configuration
 
@@ -32,6 +34,7 @@ correlation and rank diagnostics. Both stages use `output/` by default.
 example. The physical and numerical defaults are:
 
 ```text
+output_directory = "output"
 site_count = 7
 site_energies_cm = zeros(7)
 hopping_cm = 1000.0
@@ -105,3 +108,60 @@ rank diagnostics.
 For production calculations, converge the physical discretization and the
 HEOM-TT controls (`pade_order`, `tpsd_tolerance`, hierarchy size, time step,
 and both tAMEn tolerances) rather than relying on the defaults.
+
+## Equal-time electron–lattice correlation
+
+`equilibrate.jl` also samples
+
+```text
+C_nB(r,t) = sum_j [<n_j(t) B_((j+r) mod N)(t)> - <n_j(t)><B_((j+r) mod N)(t)>]
+```
+
+for all directed periodic distances `r = 0,...,N-1`, including the initial
+time. There is no division by `N`. Here `B_l` is the independent translated
+bath coordinate in `H_int = sum_l S_l B_l`, including its coupling strength;
+the Fröhlich weights in `S_l` are not multiplied into this observable again.
+This measures the bath displacement around the electron, rather than the
+weighted potential `sum_l f_(j-l) B_l` at an electronic site.
+
+The bath moment is reconstructed from first-tier scaled ADOs as
+`R_l = sum_(k in bath l) sqrt(noise.abs_coeff[k]) * rho[e_k]`.
+The joint moment `R_l[j,j]` and bath mean `Tr(R_l)` are normalized by
+the root trace, and their disconnected product is subtracted at each time.
+Every hierarchy local size must be at least two. Units are `fs^-1` for both
+`B_l` and `C_nB`; divide by `HEOMKit.icm2ifs` for `cm^-1`. These coordinates
+are not bare dimensionless phonon displacements.
+
+The output directory gains `lattice_frohlich_electron_lattice_correlation.csv`
+and `lattice_frohlich_electron_lattice_correlation.png`. The CSV has one row
+per `(time_fs, distance)` and retains real and imaginary connected and
+uncentered correlations. The heatmap displays the real connected part.
+The additional `lattice_frohlich_electron_lattice_correlation_r0_r1_r2.png`
+overlays the real time traces for `r=0`, `r=1`, and `r=2`. The CSV retains the
+imaginary parts for numerical diagnostics.
+The equilibration result exposes `lattice_distances`,
+`electron_lattice_correlation`, `electron_lattice_uncentered_correlation`
+(distance × time), and `bath_mean` (bath × time).
+
+Equilibrium metadata records the Hamiltonian, bath, temperature, Fröhlich
+range, and spectral-decomposition parameters. The current-correlation script
+checks them against the current config and reports every mismatch before
+building the correlation problem. For older checkpoints without these
+parameters, the script warns and continues without that check. The correlation
+time step may be changed independently.
+
+To measure a saved physical HEOM checkpoint without propagation:
+
+```julia
+include("examples/lattice_frohlich/equilibrate.jl")
+decomposition = decompose_bath(DEFAULT_CONFIG)
+problem = build_problem(DEFAULT_CONFIG, decomposition)
+state = load_tt_binary(joinpath("examples/lattice_frohlich", DEFAULT_CONFIG.output_directory,
+                               "lattice_frohlich_equilibrium.ttbin"))
+measurement = electron_lattice_correlation(state, problem.system)
+measurement.correlation  # entries correspond to measurement.distances
+```
+
+Use the checkpoint's model and decomposition. Equal-time measurements use
+the physical equilibration trajectory, whereas `current_correlation.jl`
+propagates the current-inserted source `J rho_eq`.

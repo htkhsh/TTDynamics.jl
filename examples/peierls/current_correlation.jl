@@ -7,16 +7,17 @@ isdefined(@__MODULE__, :DEFAULT_CONFIG) || include(joinpath(@__DIR__, "config.jl
 isdefined(@__MODULE__, :build_problem) || include(joinpath(@__DIR__, "model.jl"))
 isdefined(@__MODULE__, :run_current_correlation) || include(joinpath(@__DIR__, "utils.jl"))
 
-const PEIERLS_CORRELATION_OUTPUT_DIRECTORY = joinpath(@__DIR__, "output")
-
 function current_correlation_main(config=DEFAULT_CONFIG;
                                   correlation_time_fs::Real=CORRELATION_TIME_FS,
-                                  output_directory::AbstractString=PEIERLS_CORRELATION_OUTPUT_DIRECTORY)
+                                  output_directory::Union{Nothing,AbstractString}=nothing)
     configure_blas(config)
     println("Peierls HEOM-TT current correlation")
     println("  BLAS threads = $(BLAS.get_num_threads())")
     println("  bath decomposition = $(config.decomposition_method)")
-    directory = String(output_directory)
+    configured_directory = String(config.output_directory)
+    directory = output_directory === nothing ?
+        (isabspath(configured_directory) ? configured_directory : joinpath(@__DIR__, configured_directory)) :
+        String(output_directory)
     state_path = joinpath(directory, "peierls_equilibrium.ttbin")
     metadata_path = joinpath(directory, "peierls_equilibrium_metadata.toml")
     isfile(state_path) || throw(ArgumentError("missing equilibrium state: $state_path"))

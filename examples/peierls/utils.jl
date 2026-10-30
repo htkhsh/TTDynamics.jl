@@ -143,13 +143,13 @@ function run_current_correlation(equilibrium_state::TTTensor, config, problem;
 end
 
 function equilibrium_metadata(config, problem, state; equilibration_time_fs::Real)
-    return Dict(
+    metadata = Dict(
         "identifier" => "TTDynamics Peierls HEOM-TT equilibrium",
         "version" => 1,
         "site_count" => config.site_count,
         "site_energies_cm" => collect(Float64.(config.site_energies_cm)),
         "hopping_cm" => Float64(config.hopping_cm),
-        "drude_cutoff_cm" => Float64(config.drude_cutoff_cm),
+        "bath_model" => String(config.bath_model),
         "reorganization_energy_cm" => Float64(config.reorganization_energy_cm),
         "temperature_K" => Float64(config.temperature_K),
         "decomposition_method" => String(config.decomposition_method),
@@ -162,6 +162,15 @@ function equilibrium_metadata(config, problem, state; equilibration_time_fs::Rea
         "hierarchy_sizes" => Int.(problem.system.nb),
         "tt_dimensions" => Int.(tt_dims(state)),
     )
+    if config.bath_model === :brownian
+        metadata["brownian_frequency_cm"] = Float64(config.brownian_frequency_cm)
+        metadata["brownian_damping_cm"] = Float64(config.brownian_damping_cm)
+    elseif config.bath_model === :drude
+        metadata["drude_cutoff_cm"] = Float64(config.drude_cutoff_cm)
+    else
+        throw(ArgumentError("bath_model must be :brownian or :drude"))
+    end
+    return metadata
 end
 
 function validate_equilibrium_metadata(metadata, config, problem, state)
