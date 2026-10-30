@@ -1,14 +1,13 @@
 /Manifest.toml
 /examples/holstein/Manifest.toml
-/examples/quartic/Manifest.toml
 /examples/lattice_frohlich/Manifest.toml
 /examples/lattice_frohlich_current_correlation/Manifest.toml
 /examples/lattice_frohlich_current_correlation/output/
 /examples/peierls/Manifest.toml
-/examples/peierls/output/
 /docs/Manifest.toml
 /docs/build/
 /ref/
 /.worktrees/
+*output*/
 *.png
 *.csv
