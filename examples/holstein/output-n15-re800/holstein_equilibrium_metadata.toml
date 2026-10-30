@@ -1,7 +1,0 @@
-initial_condition = "localized"
-equilibration_time_fs = 700.0
-hierarchy_sizes = [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
-site_count = 15
-identifier = "TTDynamics Holstein HEOM-TT equilibrium"
-version = 1
-tt_dimensions = [15, 15, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]

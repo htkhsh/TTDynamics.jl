@@ -1,7 +1,0 @@
-initial_condition = "localized"
-equilibration_time_fs = 1000.0
-hierarchy_sizes = [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
-site_count = 11
-identifier = "TTDynamics Lattice Frohlich HEOM-TT equilibrium"
-version = 1
-tt_dimensions = [11, 11, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
